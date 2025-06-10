@@ -8,4 +8,5 @@ dist/
 .vscode
 .venv
 .env
+output.svg
 __pycache__
