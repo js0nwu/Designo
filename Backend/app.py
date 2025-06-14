@@ -15,7 +15,7 @@ import api_handler # We will use acquire_project and release_project from here
 # import pytz # Not directly used in snippet
 # import traceback # Not directly used in snippet, Flask handles top-level
 import re
-from tools import replace_svg_image_links_with_base64
+from tools import replace_svg_image_links_with_base64, replace_material_icons_in_svg
 
 # --- Flask App Setup ---
 app = Flask(__name__)
@@ -339,11 +339,12 @@ async def handle_generate():
         "using_own_key": run_interaction_method == 'user_key'
     }
     if final_type == "svg":
-        final_result = replace_svg_image_links_with_base64(final_result)
-        response_payload["svg"] = final_result
+        svg_withbase64_images = replace_svg_image_links_with_base64(final_result)
+        svg_with_vector_icons = replace_material_icons_in_svg(svg_withbase64_images)
+        response_payload["svg"] = svg_with_vector_icons
         try:
             with open("output.svg", 'w', encoding='utf-8', errors='replace') as f:
-                f.write(final_result)
+                f.write(svg_with_vector_icons)
         except:
             print("write to output.svg failed")
             pass
