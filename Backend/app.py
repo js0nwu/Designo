@@ -209,7 +209,8 @@ async def handle_generate():
             final_type = "svg"
             agent_used_name_log = f"{agents.refine_agent.name} -> {agents.create_agent.name}"
             logging.info(f"UID {uid}: --- Initiating Create Flow (using key ...{api_key_for_this_entire_request[-4:]}) ---")
-            refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_text)])
+            user_prompt_mod = user_prompt_text + "\n\n You're free to change or create and I want you to change or create the layout(if mentioned) to make it look astonishing and mesmerizing."
+            refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_mod)])
             
             refined_prompt_md = await adk_utils.run_adk_interaction(
                 agents.refine_agent, refine_content, adk_utils.session_service,
@@ -225,6 +226,13 @@ async def handle_generate():
                  logging.warning(f"UID {uid}: Refine agent returned empty brief for create, falling back to original prompt.")
                  refined_prompt_clean = user_prompt_text
             
+            # ======== For Debugging Puposes(To be removed in prod) ======
+            try:
+                with open("output_create_rf.md","w", errors="replace", encoding="utf8") as f:
+                    f.write(refined_prompt_clean)
+            except:
+                print("failed to write refined prompt")
+            # ============================================================
             create_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=refined_prompt_clean)])
             initial_svg = await adk_utils.run_adk_interaction(
                 agents.create_agent, create_content, adk_utils.session_service,
@@ -342,12 +350,15 @@ async def handle_generate():
         svg_withbase64_images = replace_svg_image_links_with_base64(final_result)
         svg_with_vector_icons = replace_material_icons_in_svg(svg_withbase64_images)
         response_payload["svg"] = svg_with_vector_icons
+
+        # ======== For Debugging Puposes(To be removed in prod) ======
         try:
             with open("output.svg", 'w', encoding='utf-8', errors='replace') as f:
                 f.write(svg_with_vector_icons)
         except:
             print("write to output.svg failed")
-            pass
+        # ============================================================
+
     elif final_type == "answer":
         response_payload["answer"] = final_result
     

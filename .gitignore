@@ -8,6 +8,6 @@ dist/
 .vscode
 .venv
 .env
-test.py
+test*
 output*
 __pycache__

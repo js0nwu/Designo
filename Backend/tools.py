@@ -162,8 +162,19 @@ def fetch_image_as_base64(src):
         encoded = base64.b64encode(content).decode('utf-8')
         return f"data:{mime};base64,{encoded}"
     except Exception as e:
-        print(f"[!] Could not convert image {src}: {e}")
+        print(f"[!] Could not convert image {src}:\n {e}\n Using Dummy Image Instead")
+        try:
+            response = requests.get('https://dummyjson.com/image/400x200?type=png&text=failed+to+generate+image&fontSize=16', timeout=5)
+            response.raise_for_status()
+            content = response.content
+            mime = response.headers.get("Content-Type", mimetypes.guess_type(src)[0])
+            encoded = base64.b64encode(content).decode('utf-8')
+            return f"data:{mime};base64,{encoded}"
+        except:
+            print(f"[!] Could not load dummy image {src}:\n {e}")
         return src
+
+
 
 def replace_svg_image_links_with_base64(svg_content):
     """Replaces <image> tags' href or xlink:href in SVG content with base64 image data."""
@@ -237,6 +248,7 @@ def get_material_icon_svg(icon_name: str, font_family: str, fill):
             if 'Material Symbols' in font_family:
                 print(f"Warning: Could not fetch icon '{icon_name}', Retrying with Material Symbols x24. Error: {e}")
                 url = f"https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsrounded/{icon_name}/default/24px.svg"
+            retry += 1
 
     print(f"Could not fetch icon '{icon_name}'. Skipping Icon..")
     return None
@@ -282,7 +294,6 @@ def replace_material_icons_in_svg(svg_string: str) -> str:
             print(f"Found Material Icon text: '{icon_name}'")
 
             selected = text_element.get('selected', False)
-            print(selected,"\n\n")
             icon_svg_text = get_material_icon_svg(icon_name, font_family, selected)
             if not icon_svg_text:
                 print(f"  -> Skipping '{icon_name}' as its SVG could not be fetched.")

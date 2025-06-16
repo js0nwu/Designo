@@ -44,24 +44,46 @@ function findTopLevelFrame(node) {
     return null;
 }
 
-// Convert PNG bytes to Base64 (Moved from ui.html)
+// =========================================================================
+// CORRECTED: Convert Uint8Array to Base64 using a pure JS implementation
+// (Since Blob and btoa are not available in Figma's code.js)
+// =========================================================================
+const _uint8ToBase64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+
 function uint8ArrayToBase64(bytes) {
-    return new Promise((resolve, reject) => {
-        const blob = new Blob([bytes], { type: "image/png" });
-        const reader = new FileReader();
-        reader.onload = () => {
-            const dataUrl = reader.result;
-            const base64 = dataUrl.split(",")[1];
-            if (!base64) {
-                reject(new Error("Failed to extract Base64 string from Data URL."));
-                return;
-            }
-            resolve(base64);
-        };
-        reader.onerror = (error) => reject(error);
-        reader.readAsDataURL(blob);
-    });
+    let result = '';
+    let i;
+    const len = bytes.length;
+
+    for (i = 0; i < len; i += 3) {
+        const b1 = bytes[i];
+        const b2 = bytes[i + 1];
+        const b3 = bytes[i + 2];
+
+        // Group 3 bytes into 4 Base64 characters
+        // First character
+        const enc1 = b1 >> 2;
+        // Second character
+        const enc2 = ((b1 & 3) << 4) | (b2 >> 4);
+        // Third character
+        const enc3 = ((b2 & 15) << 2) | (b3 >> 6);
+        // Fourth character
+        const enc4 = b3 & 63;
+
+        result += _uint8ToBase64Chars.charAt(enc1) + _uint8ToBase64Chars.charAt(enc2);
+
+        // Handle padding for remaining bytes (less than 3)
+        if (isNaN(b2)) { // Only 1 byte left
+            result += '==';
+        } else if (isNaN(b3)) { // Only 2 bytes left
+            result += _uint8ToBase64Chars.charAt(enc3) + '=';
+        } else { // 3 bytes, no padding
+            result += _uint8ToBase64Chars.charAt(enc3) + _uint8ToBase64Chars.charAt(enc4);
+        }
+    }
+    return result;
 }
+// =========================================================================
 
 
 // --- Selection Change Handler ---
@@ -300,8 +322,9 @@ figma.ui.onmessage = async (msg) => {
                         elementToModify.exportAsync(exportSettings)
                     ]);
 
-                    backendPayload.frameDataBase64 = framePngBytes ? await uint8ArrayToBase64(framePngBytes) : null;
-                    backendPayload.elementDataBase64 = elementPngBytes ? await uint8ArrayToBase64(elementPngBytes) : null;
+                    // Call the corrected synchronous uint8ArrayToBase64 function
+                    backendPayload.frameDataBase64 = framePngBytes ? uint8ArrayToBase64(framePngBytes) : null;
+                    backendPayload.elementDataBase64 = elementPngBytes ? uint8ArrayToBase64(elementPngBytes) : null;
 
                 } catch (error) {
                     throw new Error(`Export Error: ${error.message || "Unknown error"}`);
