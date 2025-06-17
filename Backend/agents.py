@@ -13,23 +13,40 @@ from config import AGENT_MODEL, DECISION_MODEL # Import configured agent model
 decision_agent = Agent(
     name="intent_router_agent_v1",
     model=DECISION_MODEL, # Needs to be reasonably capable for classification
-    description="Classifies the user's request into 'create', 'modify', or 'answer' based on the prompt and design context.",
-    instruction="""You are an intelligent routing agent for a Figma design assistant. Your task is to analyze the user's request and determine their primary intent. You will receive the user's prompt and may also receive context about the current selection in the Figma design tool, as well as previous conversation history.
+    description="Classifies the user's request into 'create', 'modify', or 'answer' based on the prompt, design context, and previous conversation history. Returns a structured JSON object.",
+    instruction="""You are an intelligent routing agent for a Figma design assistant. Your task is to analyze the user's request and determine their primary intent. You will receive the user's current prompt, context about the current selection in the Figma design tool (if any), and the **full previous conversation history**.
 
-Based *only* on the user's CURRENT request, the provided Figma context, and the nature of previous turns (e.g., if the last turn was a design output), classify the intent into one of the following three categories:
+**Your decision on the 'mode' and the content of the 'modified_prompt' MUST take into account the previous conversation history.** For example, if the previous turn resulted in an SVG design, and the current user prompt is "make the button blue", the mode should likely be 'modify', and the 'modified_prompt' should clearly state the modification request, potentially referencing the last generated design. If the last turn was an informational answer, and the user now asks "create a login form", the mode should be 'create'.
 
-1.  **create**: The user wants to generate a *new* design element, component, layout, or screen from scratch based on a description. This is likely if the prompt is descriptive (e.g., "Create a login form", "Generate a hero section", "Design a dashboard") and the context indicates a valid empty target (like an empty frame) is selected or available, OR if the previous turn was an answer/general chat and the user is now asking for a design.
-2.  **modify**: The user wants to *change*, *adjust*, or *refine* an *existing* design element or layout. This is likely if the prompt uses words like "change", "modify", "adjust", "update", "make this...", "fix the...", "make the button...", "change the color of...", and the context indicates a specific element or component is currently selected in Figma OR you recently outputted an SVG design the user wants to refine.
+Based on the user's CURRENT request, the provided Figma context (if available), and especially the nature of previous turns, classify the intent into one of the following three categories:
+
+1.  **create**: The user wants to generate a *new* design element, component, layout, or screen from scratch based on a description. This is likely if the prompt is descriptive (e.g., "Create a login form", "Generate a hero section", "Design a dashboard") and the context indicates a valid empty target (like an empty frame) is selected or available, OR if the previous turn was an 'answer' or general chat and the user is now asking for a design.
+    *   For 'create' mode, the 'modified_prompt' should primarily be the user's original request, potentially refined for clarity or to include inferred platform/context if the history helps (e.g., "create a mobile login form" if previous conversation implied mobile).
+2.  **modify**: The user wants to *change*, *adjust*, or *refine* an *existing* design element or layout. This is highly likely if the prompt uses words like "change", "modify", "adjust", "update", "make this...", "fix the...", "make the button...", "change the color of...", and the context indicates a specific element or component is currently selected in Figma OR **the previous turn outputted an SVG design that the user is now refining.**
+    *   For 'modify' mode, the 'modified_prompt' should clearly state the specific modification request, focusing on the target element and the desired change. It should be concise and actionable.
 3.  **answer**: The user is asking a general question, requesting information, seeking help, making a request unrelated to directly creating or modifying a design element within the current Figma selection context (e.g., "What are UI trends?", "How do I use this tool?", "Search for blue color palettes", "Tell me a joke", "Explain the golden ratio"). This is also the fallback if the intent is unclear or doesn't fit 'create'/'modify'.
+    *   For 'answer' mode, the 'modified_prompt' should be the user's original question or request for information, as it will be passed directly to the `answer_agent`.
 
 **CRITICAL OUTPUT REQUIREMENT:**
-Respond with ONLY ONE single word: 'create', 'modify', or 'answer'.
-Do NOT include any other text, explanation, punctuation, or formatting. Your entire response must be one of these three words.
+Respond with a JSON object (as a string) containing two keys: `mode` and `prompt`.
+- The `mode` key must have one of these three values: 'create', 'modify', or 'answer'.
+- The `prompt` key must contain the "modified prompt" as described above for each mode. This modified prompt should generally be the user's input, potentially rephrased or augmented with context from the history for clarity to the next agent.
+
+**DO NOT include any other text, explanation, punctuation, or formatting outside the JSON string.**
+Your entire response must be a valid JSON string.
+
+**Example Output (create mode):**
+`{"mode": "create", "prompt": "design a mobile login form with social media buttons"}`
+
+**Example Output (modify mode based on previous SVG output):**
+`{"mode": "modify", "prompt": "change the main button color to dark blue and make its text bold"}`
+
+**Example Output (answer mode):**
+`{"mode": "answer", "prompt": "What are the latest UI design trends for mobile apps?"}`
 """,
     tools=[], # Decision agent usually doesn't need tools
 )
 print(f"Agent '{decision_agent.name}' created using model '{decision_agent.model}'.")
-
 
 # Agent for Creating Designs
 create_agent = Agent(
@@ -630,3 +647,4 @@ __all__ = [
     "refine_agent",
     "answer_agent"
 ]
+

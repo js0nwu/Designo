@@ -5,6 +5,7 @@ import asyncio
 import uuid
 import io
 import os # Import os to modify environment variable
+import json # Import json for parsing
 from cryptography.fernet import Fernet # Import Fernet
 
 # --- ADK Imports ---
@@ -103,12 +104,35 @@ def is_valid_svg(svg_string):
         return False # Return False if validation fails
 
 
+# Helper to parse JSON output, robust to markdown code blocks
+def _parse_json_output(text: str) -> dict | None:
+    """Attempts to parse a string as a JSON object, stripping markdown code blocks if present."""
+    try:
+        cleaned_text = text.strip()
+        # Check for and strip markdown code block wrappers
+        if cleaned_text.startswith("```json") and cleaned_text.endswith("```"):
+            cleaned_text = cleaned_text[7:-3].strip()
+        elif cleaned_text.startswith("```") and cleaned_text.endswith("```"):
+            # Generic code block
+            cleaned_text = cleaned_text[3:-3].strip()
+
+        return json.loads(cleaned_text)
+    except json.JSONDecodeError as e:
+        print(f"JSON parsing failed: {e}. Original text: '{text}'")
+        return None
+    except Exception as e:
+        print(f"Unexpected error during JSON parsing: {e}. Original text: '{text}'")
+        return None
+
+
 # --- ADK Interaction Runner ---
 
 # Modify the function to accept an optional API key
-async def run_adk_interaction(agent_to_run: Agent, user_content: google_genai_types.Content, session_service_instance: InMemorySessionService, user_id: str = "figma_user", api_key: str | None = None):
+async def run_adk_interaction(agent_to_run: Agent, user_content: google_genai_types.Content, session_service_instance: InMemorySessionService, user_id: str = "figma_user", api_key: str | None = None) -> dict | str | None:
     """
-    Runs a single ADK agent interaction using a temporary session and returns the final text response.
+    Runs a single ADK agent interaction using a temporary session and returns the final response.
+    If the agent's name is 'intent_router_agent_v1', it will attempt to parse the response as JSON
+    and validate its structure, returning a dict. Otherwise, it returns the raw text response (str).
     Optionally uses a specific API key instead of the default GOOGLE_API_KEY env var.
     """
     final_response_text = None
@@ -194,6 +218,24 @@ async def run_adk_interaction(agent_to_run: Agent, user_content: google_genai_ty
          except Exception as delete_err:
              print(f"Warning: Failed to delete temporary session '{session_id}': {delete_err}")
 
+    # Special handling for decision_agent output
+    if agent_to_run.name == "intent_router_agent_v1" and final_response_text:
+        parsed_json = _parse_json_output(final_response_text)
+        if parsed_json:
+            # Validate required keys and mode value
+            if "mode" in parsed_json and "prompt" in parsed_json:
+                valid_modes = ["create", "modify", "answer"]
+                if parsed_json["mode"] in valid_modes:
+                    print(f"Successfully parsed decision agent output: {parsed_json}")
+                    return parsed_json # Return dictionary
+                else:
+                    print(f"Warning: Decision agent returned invalid mode '{parsed_json['mode']}'. Returning raw text.")
+            else:
+                print(f"Warning: Decision agent output missing 'mode' or 'prompt' keys. Returning raw text.")
+        else:
+            print(f"Warning: Decision agent did not return valid JSON. Returning raw text.")
+    
+    # For all other agents, or if decision agent parsing failed, return raw text
     # print(f"Agent '{agent_to_run.name}' finished for user '{user_id}'. Result: {'<empty>' if not final_response_text else final_response_text[:100] + '...'}")
     return final_response_text
 
