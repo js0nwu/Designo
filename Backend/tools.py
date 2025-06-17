@@ -354,3 +354,28 @@ def replace_material_icons_in_svg(svg_string: str) -> str:
         print(f"Replaced text '{old_element.text.strip()}' with complex SVG icon.")
 
     return ET.tostring(root, encoding='unicode', method='xml')
+
+
+def extract_svg_from_text(text: str) -> str | None:
+    """
+    Extracts the first complete SVG string found within a larger text block.
+    Looks for the first '<svg' and the last '</svg>' to capture the full SVG.
+    """
+    start_tag = "<svg"
+    end_tag = "</svg>"
+
+    start_index = text.find(start_tag)
+    if start_index == -1:
+        return None # No SVG start tag found
+
+    # Find the last occurrence of the closing tag, as the SVG might contain nested tags
+    # or be followed by other non-SVG text.
+    end_index = text.rfind(end_tag)
+    if end_index == -1:
+        return None # No SVG end tag found
+
+    # Ensure the end_index is after the start_index
+    if end_index > start_index:
+        # Include the length of the end_tag to get the complete SVG string
+        return text[start_index : end_index + len(end_tag)]
+    return None

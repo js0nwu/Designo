@@ -15,7 +15,7 @@ import api_handler # We will use acquire_project and release_project from here
 # import pytz # Not directly used in snippet
 # import traceback # Not directly used in snippet, Flask handles top-level
 import re
-from tools import replace_svg_image_links_with_base64, replace_material_icons_in_svg
+from tools import replace_svg_image_links_with_base64, replace_material_icons_in_svg, extract_svg_from_text
 
 # --- Flask App Setup ---
 app = Flask(__name__)
@@ -234,10 +234,11 @@ async def handle_generate():
                 print("failed to write refined prompt")
             # ============================================================
             create_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=refined_prompt_clean)])
-            initial_svg = await adk_utils.run_adk_interaction(
+            response = await adk_utils.run_adk_interaction(
                 agents.create_agent, create_content, adk_utils.session_service,
                 user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
             )
+            initial_svg = extract_svg_from_text(response)
             if not initial_svg or initial_svg.startswith("AGENT_ERROR:") or initial_svg.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Create Agent failed or returned error: {initial_svg}")
             
@@ -350,6 +351,7 @@ async def handle_generate():
         svg_withbase64_images = replace_svg_image_links_with_base64(final_result)
         svg_with_vector_icons = replace_material_icons_in_svg(svg_withbase64_images)
         response_payload["svg"] = svg_with_vector_icons
+        response_payload["frameName"] = refined_prompt_clean.splitlines()[0].replace('#','').replace('*','').replace(' Brief','').strip()
 
         # ======== For Debugging Puposes(To be removed in prod) ======
         try:
