@@ -35,7 +35,7 @@ def get_user_uid_from_request(request):
     try:
         scheme, id_token = auth_header.split()
         if scheme.lower() != 'bearer':
-            return None, "Authorization scheme must be Bearer"
+            return None, "Invalid Authorization header format"
     except ValueError:
         return None, "Invalid Authorization header format"
     uid = firebase_admin_init.verify_firebase_id_token(id_token)
@@ -134,11 +134,11 @@ async def handle_generate():
 
     user_history = chat_history.get(uid, [])
     data = request.get_json()
-    user_prompt_text = data.get('userPrompt')
+    user_prompt_text = data.get('userPrompt') # This is the original prompt from the frontend
     context = data.get('context', {})
     frame_data_base64 = data.get('frameDataBase64')
     element_data_base64 = data.get('elementDataBase64')
-    i_mode = data.get('mode')
+    i_mode = data.get('mode') # Frontend's suggested mode, for validation
 
     if not user_prompt_text:
         return jsonify({"success": False, "error": "Missing 'userPrompt'"}), 400
@@ -174,7 +174,8 @@ async def handle_generate():
                 logging.info(f"UID {uid}: Acquired pooled project '{project_in_use_for_this_request['id']}' (key ...{api_key_for_this_entire_request[-4:]}) for this entire request.")
             except Exception as acquire_err:
                 logging.error(f"UID {uid}: Failed to acquire a pooled project: {acquire_err}", exc_info=True)
-                return jsonify({"success": False, "error": f"Server busy, could not acquire an API resource: {acquire_err}"}), 503 # Service Unavailable
+                # !! IMPORTANT: Update the error message here !!
+                return jsonify({"success": False, "error": "Server is facing too much load, please try again later or use your own Gemini API key."}), 503 # Service Unavailable
 
         if not api_key_for_this_entire_request: # Should only happen if pooled_key path failed to set it
              logging.error(f"UID {uid}: Logical error - API key for the request was not set.")
@@ -339,6 +340,7 @@ async def handle_generate():
 
     # --- Format and Return Success Response ---
     # Check if final_result is None AND if it was not already handled as an ADK_RUNTIME_ERROR/AGENT_ERROR string
+    # Also updated this condition slightly to use decision_agent_output for the error check
     if final_result is None and not (isinstance(decision_agent_output, str) and (decision_agent_output.startswith("AGENT_ERROR:") or decision_agent_output.startswith("ADK_RUNTIME_ERROR:"))):
          logging.error(f"UID {uid}: Execution completed for '{agent_used_name_log}' but final_result is unexpectedly None for mode '{intent_mode}'.")
          return jsonify({"success": False, "error": "Agent processing failed to produce a result."}), 500
