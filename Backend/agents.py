@@ -2,10 +2,19 @@
 # --- ADK Imports ---
 from google.adk.agents import Agent
 from google.adk.tools import google_search # Assume google_search is correctly configured/available
+from google.adk.planners import BuiltInPlanner
 
 # --- Local Imports ---
 from tools import PixabayImageSearchTool
 from config import AGENT_MODEL, DECISION_MODEL # Import configured agent model
+
+from google.genai import types
+
+my_planner = BuiltInPlanner(
+    thinking_config=types.ThinkingConfig(
+        include_thoughts=True
+    )
+)
 
 # --- Agent Definitions ---
 
@@ -52,9 +61,7 @@ print(f"Agent '{decision_agent.name}' created using model '{decision_agent.model
 create_agent = Agent(
     name="svg_creator_agent_v1",
     model=AGENT_MODEL,
-    # generate_content_config=google_genai_types.GenerateContentConfig(
-    #     temperature=0.82 # Use sparingly, can make output less predictable
-    # ),
+    # planner=my_planner, # Disabled Thinking for now
     description="Generates SVG code for UI designs based on textual descriptions.",
     instruction="""
 ---
@@ -211,6 +218,7 @@ Before generating *any* SVG code, you **MUST** perform a detailed internal calcu
 
 ### DESIGN PHILOSOPHY: ARTISTIC EXCELLENCE
 *   **Beyond Literal Interpretation:** When a user prompt is highly prescriptive or doesn't provide enough scope for truly captivating visuals (e.g., omitting opportunities for abstract beauty or stunning effects), your goal is to go beyond the literal. You have the artistic license to innovate and infuse the design with abstract elements, unique interpretations, and an overall aesthetic that is astonishing, mesmerizing, and eye-catching, thereby maximizing its beauty and creative impact.
+
 """,
     tools=[], # Create agent does not need tools usually
 )
