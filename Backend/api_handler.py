@@ -1,5 +1,3 @@
-# api_handler.py
-# !! TO BE GONE THROUGH AUTOMATION TESTING !! #
 import asyncio
 import os
 import uuid
@@ -8,6 +6,7 @@ from random import shuffle
 from dotenv import load_dotenv
 import datetime # Import datetime
 import pytz # For timezone-aware datetimes
+import time # Import time for timeout checks
 
 from google.genai import types as google_genai_types
 from google.adk.agents import Agent
@@ -16,12 +15,14 @@ import agents
 import adk_utils
 
 load_dotenv()
+
 # --- Configuration for the Project Pool ---
 num_projects_str = os.getenv('NUM_PROJECTS')
 DEFAULT_NUM_PROJECTS = 6 # As you mentioned you have 6 now
-# CLIENT_IMPOSED_SESSIONS_PER_KEY_PER_MINUTE = 3 # Old value
-CLIENT_IMPOSED_SESSIONS_PER_KEY_PER_MINUTE = 10 # Client's new requirement: 10 requests per minute
-DAILY_REQUEST_LIMIT_PER_KEY = 500 # New client requirement: 500 requests per day
+CLIENT_IMPOSED_SESSIONS_PER_KEY_PER_MINUTE = 3 # Client's new requirement
+MAX_CONCURRENT_REQUESTS_PER_KEY = 0 # Simultaneous active users per key
+MAX_DAILY_REQUESTS_PER_KEY = 500 # NEW: Daily request limit per pooled API key
+MAX_ACQUIRE_WAIT_TIME_SECONDS = 15 # NEW: Max time to wait for a pooled key before raising an error
 
 if num_projects_str is None:
     logging.warning(f"NUM_PROJECTS environment variable not set. Defaulting to {DEFAULT_NUM_PROJECTS}.")
@@ -36,7 +37,6 @@ else:
         logging.warning(f"NUM_PROJECTS environment variable ('{num_projects_str}') is not a valid integer. Defaulting to {DEFAULT_NUM_PROJECTS}.")
         NUM_PROJECTS = DEFAULT_NUM_PROJECTS
 
-MAX_CONCURRENT_REQUESTS_PER_KEY = 3 # Simultaneous active users per key
 API_KEYS = []
 
 for i in range(NUM_PROJECTS):
@@ -53,7 +53,8 @@ if not API_KEYS:
 logging.info(f"api_handler: Loaded {len(API_KEYS)} API Keys. Target NUM_PROJECTS: {NUM_PROJECTS}.")
 logging.info(f"api_handler: Max concurrent users per key: {MAX_CONCURRENT_REQUESTS_PER_KEY}.")
 logging.info(f"api_handler: Max new user sessions initiating per key per minute: {CLIENT_IMPOSED_SESSIONS_PER_KEY_PER_MINUTE}.")
-logging.info(f"api_handler: Max daily requests per key: {DAILY_REQUEST_LIMIT_PER_KEY}.")
+logging.info(f"api_handler: Max daily requests per key: {MAX_DAILY_REQUESTS_PER_KEY}.")
+logging.info(f"api_handler: Max wait time for key acquisition: {MAX_ACQUIRE_WAIT_TIME_SECONDS} seconds.")
 
 
 PROJECT_POOL = []
@@ -63,10 +64,10 @@ if API_KEYS:
             "api_key": API_KEYS[i],
             "id": f"pooled_project_{i+1}", # 1-based id
             "semaphore": asyncio.Semaphore(MAX_CONCURRENT_REQUESTS_PER_KEY),
-            "session_start_timestamps": [], # Stores datetime objects of when sessions started (for per-minute)
+            "session_start_timestamps": [], # Stores datetime objects of when sessions started
             "rate_limit_new_sessions_per_minute": CLIENT_IMPOSED_SESSIONS_PER_KEY_PER_MINUTE,
-            "requests_today_count": 0, # New: For daily rate limit
-            "last_daily_reset_date": None # New: For daily rate limit reset
+            "requests_today": MAX_DAILY_REQUESTS_PER_KEY, # NEW: Daily request counter
+            "last_reset_date": datetime.datetime.now(pytz.utc).date() # NEW: Date for daily reset
         }
         for i in range(len(API_KEYS))
     ]
@@ -94,75 +95,93 @@ async def initialize_project_pool():
 async def acquire_project():
     """
     Acquires an available project from the pool that meets concurrency,
-    per-minute, and per-day rate limits. Waits if no such project is available.
+    new session rate limit, AND daily request limit.
+    Waits if no such project is available, and raises an Exception if
+    it cannot acquire a project within MAX_ACQUIRE_WAIT_TIME_SECONDS.
     """
     if not PROJECT_POOL:
         logging.error("api_handler: Project pool is empty. Cannot acquire project.")
         raise Exception("api_handler: Project pool is not configured or empty.")
 
-    while True: # Loop until a suitable project is acquired
-        if available_projects_queue.empty():
-            logging.info("acquire_project: Queue is empty, waiting for a project token to be released or become available...")
-            await asyncio.sleep(0.1) # Small sleep while waiting for a token to be put back
-            continue # Re-check queue after sleep
+    start_time = time.time()
+    num_projects = len(PROJECT_POOL)
+    checked_in_cycle = 0 # Tracks how many unique projects we've checked in a cycle
 
-        # Get a project token from the queue. This does not block indefinitely if others are available.
-        project_token = await available_projects_queue.get()
+    while True:
+        # Check overall timeout for acquiring any project from the pool
+        if time.time() - start_time > MAX_ACQUIRE_WAIT_TIME_SECONDS:
+            logging.error(f"api_handler: Failed to acquire project within {MAX_ACQUIRE_WAIT_TIME_SECONDS} seconds. Pool exhausted or highly contended.")
+            raise Exception("Server is facing too much load, please try again later or use your own Gemini API key.")
+
+        project_token = None
+        try:
+            # Try to get a project without waiting, to cycle through potentially available ones
+            project_token = available_projects_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            # If queue is empty, wait briefly, then retry the loop and the timeout check
+            logging.debug(f"acquire_project: Queue empty, waiting for {0.1}s to re-check pool status.")
+            await asyncio.sleep(0.1)
+            continue # Go back to the top of the while loop, re-check overall timeout and queue
+
+        if project_token["semaphore"]._value==0:
+            raise Exception("Server is facing too much load, please try again later or use your own Gemini API key.")
+
         project_id_log = project_token['id']
 
+        # Ensure we use timezone-aware UTC for comparisons
         now_utc = datetime.datetime.now(pytz.utc)
-        today_utc_date = now_utc.date()
 
-        # --- 1. Daily Rate Limit Check & Reset ---
-        # Reset daily count if it's a new day for this specific key
-        if project_token["last_daily_reset_date"] is None or project_token["last_daily_reset_date"] < today_utc_date:
-            logging.info(f"acquire_project: Resetting daily count for {project_id_log}. Old date: {project_token['last_daily_reset_date']}.")
-            project_token["requests_today_count"] = 0
-            project_token["last_daily_reset_date"] = today_utc_date # Update to today's date
-
-        if project_token["requests_today_count"] >= DAILY_REQUEST_LIMIT_PER_KEY:
-            logging.info(f"acquire_project: Project {project_id_log} is daily rate-limited ({project_token['requests_today_count']}/{DAILY_REQUEST_LIMIT_PER_KEY}). Returning to queue.")
-            await available_projects_queue.put(project_token) # Put it back at the end of the queue.
-            await asyncio.sleep(0.1) # Small pause before trying another project to prevent tight looping on rate-limited keys
-            continue # Try next project
-
-        # --- 2. Per-Minute Rate Limit Check ---
-        # Prune old timestamps (older than 60 seconds)
+        # NEW: 1. Daily Reset Check
+        now_utc_date = now_utc.date()
+        if project_token["last_reset_date"] < now_utc_date:
+            logging.info(f"api_handler: Daily reset for project {project_token['id']}. Resetting requests_today to {MAX_DAILY_REQUESTS_PER_KEY} and last_reset_date to {now_utc_date}.")
+            project_token["requests_today"] = MAX_DAILY_REQUESTS_PER_KEY
+            project_token["last_reset_date"] = now_utc_date
+            
+        # 2. Prune old timestamps (older than 60 seconds)
         project_token["session_start_timestamps"] = [
             ts for ts in project_token["session_start_timestamps"]
             if (now_utc - ts).total_seconds() < 60
         ]
-        current_sessions_in_minute_window = len(project_token["session_start_timestamps"])
+        current_sessions_in_rate_window = len(project_token["session_start_timestamps"])
 
-        if current_sessions_in_minute_window >= project_token["rate_limit_new_sessions_per_minute"]:
-            logging.info(f"acquire_project: Project {project_id_log} is minute rate-limited ({current_sessions_in_minute_window}/{project_token['rate_limit_new_sessions_per_minute']} in last 60s). Returning to queue.")
-            await available_projects_queue.put(project_token) # Put it back.
-            await asyncio.sleep(0.1) # Small pause
-            continue # Try next project
+        # NEW: 3. Check combined conditions: New session rate limit AND daily limit
+        if current_sessions_in_rate_window < project_token["rate_limit_new_sessions_per_minute"] and \
+           project_token["requests_today"] > 2:
+            # Rate limit and daily limit passed. Now, try to acquire the concurrency semaphore.
+            try:
+                await project_token["semaphore"].acquire()
 
-        # --- 3. Concurrency (Semaphore) Check ---
-        try:
-            # This will block until a semaphore slot is available for THIS specific project.
-            # If we've reached here, all other rate limits passed, so we wait for concurrency.
-            await project_token["semaphore"].acquire()
+                # If we reach here, semaphore acquired! This key can handle another concurrent user.
+                # Add current time to mark the start of this new session for rate-limiting.
+                project_token["session_start_timestamps"].append(now_utc)
+                project_token["requests_today"] -= 1 # NEW: Decrement daily request count
+                logging.info(f"api_handler: Acquired project {project_token['id']}. Concurrency slot taken. New session started. Sessions in last 60s: {len(project_token['session_start_timestamps'])}. Requests remaining today: {project_token['requests_today']}.")
+                return project_token # Successfully acquired!
+            except Exception as e: # Should not happen with standard semaphore acquire unless cancelled
+                logging.error(f"api_handler: Unexpected error acquiring semaphore for {project_id_log}: {e}", exc_info=True)
+                # If semaphore acquisition fails unexpectedly, put token back and try another.
+                await available_projects_queue.put(project_token)
+                checked_in_cycle += 1 # Count this check as an unsuccessful one
+                # If we've checked all projects and still no luck, pause briefly
+                if checked_in_cycle >= num_projects:
+                    logging.debug(f"api_handler: Cycled through projects after semaphore error; pausing briefly.")
+                    await asyncio.sleep(0.2)
+                    checked_in_cycle = 0
+                continue # Try next iteration
+        else:
+            # This project_token is currently unsuitable (either rate-limited or daily-limited).
+            # Put it back to the end of the queue.
+            # logging.debug(f"api_handler: Project {project_id_log} is unsuitable (rate/daily limit). Returning to queue.")
+            await available_projects_queue.put(project_token)
+            checked_in_cycle += 1 # Count this check
 
-            # If we reach here, all checks passed and semaphore acquired.
-            # Increment counts for this successful acquisition.
-            project_token["session_start_timestamps"].append(now_utc) # Mark for per-minute
-            project_token["requests_today_count"] += 1 # Mark for daily
-
-            logging.info(f"acquire_project: Acquired project {project_id_log}. "
-                         f"Concurrency slots taken: {MAX_CONCURRENT_REQUESTS_PER_KEY - project_token['semaphore']._value}/{MAX_CONCURRENT_REQUESTS_PER_KEY}. "
-                         f"Minute sessions: {len(project_token['session_start_timestamps'])}/{project_token['rate_limit_new_sessions_per_minute']}. "
-                         f"Daily requests: {project_token['requests_today_count']}/{DAILY_REQUEST_LIMIT_PER_KEY}.")
-            return project_token # Successfully acquired!
-
-        except Exception as e:
-            # This path is generally for unexpected errors during semaphore acquisition
-            logging.error(f"api_handler: Unexpected error acquiring semaphore for {project_id_log}: {e}", exc_info=True)
-            await available_projects_queue.put(project_token) # Put token back
-            await asyncio.sleep(0.1) # Small pause
-            continue # Try next project
+            # If we've cycled through all project tokens and none were suitable,
+            # wait briefly before trying another cycle to prevent tight looping.
+            if checked_in_cycle >= num_projects:
+                logging.debug(f"api_handler: Cycled through all projects ({checked_in_cycle}/{num_projects}); all appeared busy, rate-limited, or daily-limited. Brief pause.")
+                await asyncio.sleep(0.2) # Short pause to yield control
+                checked_in_cycle = 0 # Reset cycle count
 
 
 async def release_project(project_token):
@@ -170,7 +189,7 @@ async def release_project(project_token):
     if project_token:
         try:
             project_token["semaphore"].release()
-            logging.info(f"api_handler: Project {project_token['id']} concurrency slot released.")
+            logging.info(f"api_handler: Project {project_token['id']} concurrency slot released. Requests remaining today: {project_token['requests_today']}.")
         except Exception as e:
             logging.error(f"api_handler: Error releasing semaphore for {project_token.get('id', 'UNKNOWN')}: {e}", exc_info=True)
         finally:
@@ -181,55 +200,8 @@ async def release_project(project_token):
         logging.warning("api_handler: Attempted to release a null project_token.")
 
 
-# process_request_with_pooled_key_single_step is not directly used in your current app.py
-# for the multi-step request, but I'll keep it consistent with the overall acquire/release pattern
-# if it were to be used for isolated agent calls.
-async def process_request_with_pooled_key_single_step(
-    agent_to_run: Agent,
-    user_content: google_genai_types.Content,
-    user_id: str
-):
-    """
-    Manages acquiring a key from the pool for a SINGLE agent step,
-    respecting concurrency and new session rate limits, running the ADK interaction,
-    and then releasing the key.
-    Each call to this function is treated as a new "session" for rate limiting.
-    """
-    project_in_use = None
-    request_log_id = str(uuid.uuid4())[:8]
-
-    if not PROJECT_POOL:
-        logging.error(f"api_handler [Req-{request_log_id}]: Cannot process. Project pool is empty.")
-        return f"ADK_RUNTIME_ERROR: api_handler: Project pool is empty or not configured."
-
-    try:
-        project_in_use = await acquire_project()
-        pooled_api_key = project_in_use["api_key"]
-        project_id_log_tag = f"{project_in_use['id']}/Req-{request_log_id}"
-
-        logging.info(f"api_handler [{project_id_log_tag}]: Using pooled key ...{pooled_api_key[-4:]} for agent '{agent_to_run.name}' for user '{user_id}'.")
-
-        response = await adk_utils.run_adk_interaction(
-            agent_to_run=agent_to_run,
-            user_content=user_content,
-            session_service_instance=adk_utils.session_service,
-            user_id=user_id,
-            api_key=pooled_api_key
-        )
-        logging.info(f"api_handler [{project_id_log_tag}]: Agent '{agent_to_run.name}' completed.")
-        return response
-    except Exception as e:
-        project_id_for_error = project_in_use['id'] if project_in_use else 'N/A_NO_PROJECT_ACQUIRED'
-        logging.error(f"api_handler [{project_id_for_error}/Req-{request_log_id}]: Error in process_request_with_pooled_key_single_step for '{agent_to_run.name}': {e}", exc_info=True)
-        return f"ADK_RUNTIME_ERROR: Exception in api_handler processing request for '{agent_to_run.name}': {e}"
-    finally:
-        if project_in_use:
-            await release_project(project_in_use)
-
-
 __all__ = [
     "initialize_project_pool",
-    "acquire_project",
-    "release_project",
-    # "process_request_with_pooled_key_single_step" # Commented out as it's not the primary entry for app.py
+    "acquire_project", # Exporting for app.py
+    "release_project", # Exporting for app.py
 ]
