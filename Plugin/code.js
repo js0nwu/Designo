@@ -3,7 +3,7 @@
 // =========================================================================
 
 figma.showUI(__html__, {
-  width: 450,
+  width: 500,
   height: 600, // Adjusted height for auth section
   title: "AI Design Assistant",
 });
@@ -124,8 +124,9 @@ figma.on("selectionchange", async () => {
 
   if (selection.length !== 1) {
     figma.ui.postMessage({
-      type: "selection-invalid",
-      reason: "Please select exactly one item.",
+      type: "selection-update",
+      mode: mode,
+      reason: "Switched to chat mode",
     });
     lastNotifiedFrameId = null;
     lastNotifiedMode = "answer";
@@ -456,7 +457,7 @@ figma.ui.onmessage = async (msg) => {
       // --- CALL BACKEND API DIRECTLY FROM CODE.JS ---
       figma.ui.postMessage({
         type: "status-update",
-        text: "Communicating with AI Assistant Backend...",
+        text: "Working on it...",
         isLoading: true,
       });
 
