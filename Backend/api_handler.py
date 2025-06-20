@@ -20,7 +20,7 @@ load_dotenv()
 num_projects_str = os.getenv('NUM_PROJECTS')
 DEFAULT_NUM_PROJECTS = 6 # As you mentioned you have 6 now
 CLIENT_IMPOSED_SESSIONS_PER_KEY_PER_MINUTE = 3 # Client's new requirement
-MAX_CONCURRENT_REQUESTS_PER_KEY = 0 # Simultaneous active users per key
+MAX_CONCURRENT_REQUESTS_PER_KEY = 3 # Simultaneous active users per key
 MAX_DAILY_REQUESTS_PER_KEY = 500 # NEW: Daily request limit per pooled API key
 MAX_ACQUIRE_WAIT_TIME_SECONDS = 15 # NEW: Max time to wait for a pooled key before raising an error
 
