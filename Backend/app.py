@@ -115,10 +115,8 @@ async def handle_generate():
     can_proceed_trial, trial_message, decrypted_user_api_key, requests_today = firebase_admin_init.process_daily_trial(uid)
 
     run_interaction_method = None
-    # api_key_for_adk_utils will be set either to user's key or a specific pooled key
     api_key_for_this_entire_request = None
-    # project_in_use_for_this_request will hold the dict from api_handler if a pooled key is used
-    project_in_use_for_this_request = None
+    project_in_use_for_this_request = None # Holds the dict from api_handler if a pooled key is used
 
     if decrypted_user_api_key:
         logging.info(f"User {uid} has a stored (BYOK) API key. Using it for all steps.")
@@ -165,14 +163,19 @@ async def handle_generate():
         # --- Acquire pooled key if needed, ONCE for the entire request ---
         if run_interaction_method == 'pooled_key':
             try:
+                # acquire_project now handles its own timeout and raises specific error
                 project_in_use_for_this_request = await api_handler.acquire_project()
                 api_key_for_this_entire_request = project_in_use_for_this_request["api_key"]
-                logging.info(f"UID {uid}: Acquired pooled project '{project_in_use_for_this_request['id']}' (key ...{api_key_for_this_entire_request[-4:]}) for this entire request.")
+                logging.info(f"UID {uid}: Acquired pooled project '{project_in_use_for_this_request['id']}' (key ...{api_key_for_this_entire_request[-4:]}) for this entire request. Requests remaining today for this key: {project_in_use_for_this_request['requests_today']}.")
             except Exception as acquire_err:
-                logging.error(f"UID {uid}: Failed to acquire a pooled project: {acquire_err}", exc_info=True)
-                # If acquire fails, it might raise, or we might want to return a specific "busy" error.
-                # For now, let it propagate or return a generic error.
-                return jsonify({"success": False, "error": f"Server busy, could not acquire an API resource: {acquire_err}"}), 503 # Service Unavailable
+                # Catch the specific error message from api_handler.acquire_project
+                error_msg_str = str(acquire_err)
+                if "Server is facing too much load" in error_msg_str:
+                    logging.warning(f"UID {uid}: Pooled project acquisition failed due to load: {error_msg_str}")
+                    return jsonify({"success": False, "error": error_msg_str}), 503 # Service Unavailable
+                else:
+                    logging.error(f"UID {uid}: Failed to acquire a pooled project (unexpected error): {acquire_err}", exc_info=True)
+                    return jsonify({"success": False, "error": f"An internal server error occurred while acquiring resources: {acquire_err}"}), 500
 
         if not api_key_for_this_entire_request: # Should only happen if pooled_key path failed to set it
              logging.error(f"UID {uid}: Logical error - API key for the request was not set.")
@@ -185,17 +188,21 @@ async def handle_generate():
             user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
         )
 
-        if not intent_mode_raw or intent_mode_raw.startswith("AGENT_ERROR:") or intent_mode_raw.startswith("ADK_RUNTIME_ERROR:"):
+        # adk_utils.run_adk_interaction now returns a dict for decision_agent if successful
+        if isinstance(intent_mode_raw, dict) and "mode" in intent_mode_raw and "prompt" in intent_mode_raw:
+            intent_mode = intent_mode_raw["mode"].strip().lower()
+            user_prompt_for_next_agent = intent_mode_raw["prompt"].strip()
+            logging.info(f"UID {uid}: Determined Intent: '{intent_mode}' with refined prompt.")
+        else: # Fallback if decision agent failed or returned unexpected format
             error_msg = f"Could not determine intent. Agent Response: {intent_mode_raw}"
             logging.error(f"UID {uid}: {error_msg}")
             # Note: If an AGENT_ERROR or ADK_RUNTIME_ERROR occurs, the key is still held until 'finally'
             return jsonify({"success": False, "error": error_msg}), 200
 
-        intent_mode = intent_mode_raw.strip().lower()
         if intent_mode not in ['create', 'modify', 'answer']:
-            logging.warning(f"UID {uid}: Decision agent returned unexpected value: '{intent_mode}'. Falling back to 'answer'.")
+            logging.warning(f"UID {uid}: Decision agent returned unexpected mode '{intent_mode}'. Falling back to 'answer'.")
             intent_mode = 'answer'
-        logging.info(f"UID {uid}: Determined Intent: '{intent_mode}'")
+            user_prompt_for_next_agent = user_prompt_text # Use original prompt if mode is invalid
 
         if intent_mode in ['create', 'modify'] and i_mode != intent_mode:
             logging.warning(f"UID {uid}: Agent intent '{intent_mode}', frontend mode '{i_mode}'. Mismatch.")
@@ -209,8 +216,9 @@ async def handle_generate():
             final_type = "svg"
             agent_used_name_log = f"{agents.refine_agent.name} -> {agents.create_agent.name}"
             logging.info(f"UID {uid}: --- Initiating Create Flow (using key ...{api_key_for_this_entire_request[-4:]}) ---")
-            user_prompt_mod = user_prompt_text + "\n\n You're free to change or create and I want you to change or create the layout(if mentioned) to make it look astonishing and mesmerizing."
-            refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_mod)])
+            
+            # Use the refined prompt from decision agent
+            refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_for_next_agent)])
             
             refined_prompt_md = await adk_utils.run_adk_interaction(
                 agents.refine_agent, refine_content, adk_utils.session_service,
@@ -220,11 +228,9 @@ async def handle_generate():
                 raise ValueError(f"Refine Agent failed or returned error for create: {refined_prompt_md}")
             
             refined_prompt_clean = refined_prompt_md.strip()
-            # refined_prompt_clean = re.sub(r'^\s*```(?:markdown)?\s*', '', refined_prompt_clean, flags=re.IGNORECASE)
-            # refined_prompt_clean = re.sub(r'\s*```\s*$', '', refined_prompt_clean, flags=re.IGNORECASE)
             if not refined_prompt_clean:
-                 logging.warning(f"UID {uid}: Refine agent returned empty brief for create, falling back to original prompt.")
-                 refined_prompt_clean = user_prompt_text
+                 logging.warning(f"UID {uid}: Refine agent returned empty brief for create, falling back to original refined prompt from decision agent.")
+                 refined_prompt_clean = user_prompt_for_next_agent
             
             # ======== For Debugging Puposes(To be removed in prod) ======
             try:
@@ -255,7 +261,8 @@ async def handle_generate():
             if not frame_data_base64 or not element_data_base64 or not context.get('elementInfo'):
                  raise ValueError("Missing 'frameDataBase64', 'elementDataBase64', or 'elementInfo' for modify mode")
 
-            refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_text)])
+            # Use the refined prompt from decision agent
+            refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_for_next_agent)])
             refined_prompt_md = await adk_utils.run_adk_interaction(
                 agents.refine_agent, refine_content, adk_utils.session_service,
                 user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
@@ -264,11 +271,9 @@ async def handle_generate():
                 raise ValueError(f"Refine Agent failed or returned error for modify: {refined_prompt_md}")
 
             refined_prompt_clean = refined_prompt_md.strip()
-            # refined_prompt_clean = re.sub(r'^\s*```(?:markdown)?\s*', '', refined_prompt_clean, flags=re.IGNORECASE)
-            # refined_prompt_clean = re.sub(r'\s*```\s*$', '', refined_prompt_clean, flags=re.IGNORECASE)
             if not refined_prompt_clean:
-                 logging.warning(f"UID {uid}: Refine agent returned empty brief for modify, falling back to original prompt.")
-                 refined_prompt_clean = user_prompt_text
+                 logging.warning(f"UID {uid}: Refine agent returned empty brief for modify, falling back to original refined prompt from decision agent.")
+                 refined_prompt_clean = user_prompt_for_next_agent
 
             modify_agent_prompt_text = f"""**Modification Brief**\n{refined_prompt_clean}\n\n**Original User Prompt for context:**\n{user_prompt_text}\n\n**Figma Context:**\nFrame Name: {context.get('frameName', 'N/A')}\nElement Info: {context.get('elementInfo','N/A')}"""
             message_parts = [google_genai_types.Part(text=modify_agent_prompt_text)]
@@ -298,7 +303,9 @@ async def handle_generate():
             final_type = "answer"
             agent_used_name_log = agents.answer_agent.name
             logging.info(f"UID {uid}: --- Running Answer Agent (using key ...{api_key_for_this_entire_request[-4:]}) ---")
-            answer_prompt_text = f"{history_text}**User Query**\n{user_prompt_text}\n\nPlease provide a helpful design-related answer."
+            
+            # Use the refined prompt from decision agent
+            answer_prompt_text = f"{history_text}**User Query**\n{user_prompt_for_next_agent}\n\nPlease provide a helpful design-related answer."
             answer_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=answer_prompt_text)])
             
             answer_text = await adk_utils.run_adk_interaction(
@@ -333,7 +340,7 @@ async def handle_generate():
             logging.info(f"UID {uid}: Released pooled project '{project_in_use_for_this_request['id']}' after request completion/failure.")
 
     # --- Format and Return Success Response ---
-    if final_result is None and not (intent_mode_raw.startswith("AGENT_ERROR:") or intent_mode_raw.startswith("ADK_RUNTIME_ERROR:")) : # Check if error already handled
+    if final_result is None and not (isinstance(intent_mode_raw, str) and (intent_mode_raw.startswith("AGENT_ERROR:") or intent_mode_raw.startswith("ADK_RUNTIME_ERROR:"))): # Check if error already handled
          logging.error(f"UID {uid}: Execution completed for '{agent_used_name_log}' but final_result is unexpectedly None for mode '{intent_mode}'.")
          return jsonify({"success": False, "error": "Agent processing failed to produce a result."}), 500
 
@@ -344,14 +351,26 @@ async def handle_generate():
     response_payload = {
         "success": True,
         "mode": final_type,
-        "requests_today": requests_today,
+        "requests_today": requests_today, # This is the user's trial quota from process_daily_trial
         "using_own_key": run_interaction_method == 'user_key'
     }
+    # NEW: Add information about the pooled key's remaining requests
+    if run_interaction_method == 'pooled_key' and project_in_use_for_this_request:
+        response_payload["pooled_key_requests_remaining_today"] = project_in_use_for_this_request['requests_today']
+
     if final_type == "svg":
         svg_withbase64_images = replace_svg_image_links_with_base64(final_result)
         svg_with_vector_icons = replace_material_icons_in_svg(svg_withbase64_images)
         response_payload["svg"] = svg_with_vector_icons
-        response_payload["frameName"] = refined_prompt_clean.splitlines()[0].replace('#','').replace('*','').replace(' Brief','').strip()
+        # Check if refined_prompt_clean is available and valid before using for frameName
+        frame_name_from_refined_prompt = ""
+        if refined_prompt_clean and isinstance(refined_prompt_clean, str):
+            first_line = refined_prompt_clean.splitlines()[0]
+            # Strip markdown and common prefixes from the first line
+            frame_name_from_refined_prompt = first_line.replace('#','').replace('*','').replace(' Brief','').strip()
+        
+        response_payload["frameName"] = frame_name_from_refined_prompt if frame_name_from_refined_prompt else "Generated Design"
+
 
         # ======== For Debugging Puposes(To be removed in prod) ======
         try:
