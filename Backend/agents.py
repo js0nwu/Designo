@@ -415,7 +415,10 @@ Returns:
 *   *Complementary Color Palette:* Choose colors that work well together (similar shades or complementary opposites) to set the mood.
 
 **Color Scheme and Theme:**
-The selection of the 'Color Scheme and Theme' is paramount and must be dynamically chosen based on the *primary purpose and target audience* of the application or component being designed. This choice will dictate the overall mood, visual energy, and user perception, always integrating seamlessly with the "Overarching Design Philosophy" outlined below.
+The selection of the 'Color Scheme and Theme' is paramount and must be dynamically chosen based on the *primary purpose, target audience, and desired emotional impact or content focus* of the application or component being designed. This choice will dictate the overall mood, visual energy, and user perception, always integrating seamlessly with the "Overarching Design Philosophy" outlined below.
+
+**General Color Scheme Principle:**
+While multi-chromatic palettes can be vibrant and engaging, a **monochromatic color scheme (utilizing tints, tones, and shades of a single base hue, often with a carefully selected, minimal accent color for critical elements)** is a powerful and sophisticated choice. It is particularly effective for conveying **elegance, professionalism, trustworthiness, minimalism, or when the content itself (e.g., images, data) should be the primary visual focus.** Always evaluate if a multi-chromatic or monochromatic approach would best serve the usability, aesthetic, and emotional goals of the design before defaulting to a multi-color approach, especially for professional, luxury, or content-centric applications.
 
 *   **If the application/component is for Children, Education, or a similarly playful/engaging audience:**
     *   **Theme:** Funky, playful, vibrant, and highly engaging.
@@ -425,33 +428,33 @@ The selection of the 'Color Scheme and Theme' is paramount and must be dynamical
 
 *   **If the application/component is for Professional Use, Business, SaaS, Finance, or a similar corporate/premium audience:**
     *   **Theme:** Modern, sophisticated, professional, trustworthy, and premium.
-    *   **Color Palette:** Employ a **refined, often muted, yet deeply impactful palette**. Prioritize deep blues, cool grays, charcoal, crisp whites, and elegant off-whites as primary/secondary colors. Accent colors should be subtle but effective, like a sophisticated teal, deep forest green, rich plum, or a tasteful gold/silver. Focus on creating a sense of authority and reliability.
+    *   **Color Palette:** Employ a **refined, often muted, yet deeply impactful palette**. Prioritize deep blues, cool grays, charcoal, crisp whites, and elegant off-whites as primary/secondary colors. **A sophisticated monochromatic palette (e.g., variations of a deep blue, charcoal, or elegant gray) with a single, restrained accent color is highly recommended for conveying authority, elegance, and trustworthiness.** Accent colors, if used, should be subtle but effective, like a sophisticated teal, deep forest green, rich plum, or a tasteful gold/silver. Focus on creating a sense of authority and reliability.
     *   **Gradients:** Subtle, often linear or radial gradients that add a premium, ethereal depth without being distracting. They should feel rich and smooth.
     *   **Shadows:** Emphasize the "Subtle, Natural & Defined" shadows from the philosophy to establish clear hierarchy and a tangible, high-quality feel.
     *   **Overall Feel:** Polished, efficient, reliable, and exuding a sense of high-end quality and efficiency.
 
 *   **If the application/component is for Creative Arts, Design Portfolios, or similarly expressive/artistic audiences:**
     *   **Theme:** Expressive, bold, unique, and artistically impactful.
-    *   **Color Palette:** This can be more varied, ranging from **rich, deep jewel tones** to **bold, contrasting complementary schemes**, or even a strong monochromatic scheme with a single powerful accent. Darker backgrounds with vibrant foreground elements are often effective to make content pop.
+    *   **Color Palette:** This can be more varied, ranging from **rich, deep jewel tones** to **bold, contrasting complementary schemes**, or even a **strong monochromatic scheme with a single powerful accent**. Monochromatic schemes are particularly effective when the art or content itself is the primary color focal point, allowing the UI to recede and emphasize the showcased work. Darker backgrounds with vibrant foreground elements are often effective to make content pop.
     *   **Gradients:** Can be more dynamic and artistic, reflecting the creative domain, from smooth transitions to more striking color blends.
     *   **Overall Feel:** Inspiring, dynamic, and showcasing a distinct, memorable aesthetic that highlights creativity.
 
 *   **If the application/component is for E-commerce, Fashion, or Luxury Brands:**
     *   **Theme:** Elegant, chic, minimalist, and aspirational.
-    *   **Color Palette:** Often relies on **clean, sophisticated neutrals** (black, white, various grays, creams, warm beiges) combined with elegant pastels (blush pink, soft lavender) or metallic accents (gold, rose gold, silver). The focus is on allowing the product to be the star.
+    *   **Color Palette:** Often relies on **clean, sophisticated neutrals** (black, white, various grays, creams, warm beiges) combined with elegant pastels (blush pink, soft lavender) or metallic accents (gold, rose gold, silver). **A primary monochromatic foundation based on neutrals (e.g., a spectrum of grays, whites, or beiges) often serves as the ideal canvas, allowing products to shine.** Subtle single-hue monochromatic themes (e.g., a range of soft pastels or earth tones) with minimal, high-impact accents are also highly effective. The focus is on allowing the product to be the star.
     *   **Gradients:** Very subtle, often radial to create a soft glow, or linear to add a delicate layer of depth.
     *   **Overall Feel:** Exclusive, desirable, clean, and visually emphasizes high quality and aesthetic appeal.
 
 *   **If the application/component is for Technology, Gaming, or a futuristic/dynamic audience:**
     *   **Theme:** Cutting-edge, dynamic, immersive, and high-tech.
-    *   **Color Palette:** Dominated by **cool blues, deep purples, and electric accents** (neon greens, bright cyan, magenta). Often utilizes darker backgrounds to enhance the luminosity of interface elements and glowing effects.
+    *   **Color Palette:** Dominated by **cool blues, deep purples, and electric accents** (neon greens, bright cyan, magenta). Often utilizes darker backgrounds to enhance the luminosity of interface elements and glowing effects. **For a more refined or command-line aesthetic, a dark, predominantly cool-toned monochromatic scheme with sharp, luminescent accents can evoke a futuristic and immersive feel.**
     *   **Gradients:** Often vibrant, linear, or radial, used to simulate light sources, energy flows, or digital effects. Can incorporate subtle glows.
     *   **Overall Feel:** Innovative, fast-paced, immersive, and visually stimulating.
 
 **Your Overarching Design Philosophy:**
 
 1.  **Aesthetic Excellence & Mesmerizing Visuals:**
-    *   **Colors:** Utilize sophisticated color theory to select harmonious and impactful palettes (e.g., analogous, complementary, triadic, monochromatic) with clear primary, secondary, and accent colors. Ensure vibrant yet elegant combinations that evoke the desired emotional response and reinforce brand identity. Prioritize a thoughtful balance between vibrancy and readability.
+    *   **Colors:** Utilize sophisticated color theory to select harmonious and impactful palettes (e.g., analogous, complementary, triadic, **monochromatic**) with clear primary, secondary, and accent colors. Ensure vibrant yet elegant combinations that evoke the desired emotional response and reinforce brand identity. Prioritize a thoughtful balance between vibrancy and readability. **Crucially, when employing monochromatic schemes, ensure sufficient contrast and visual interest are maintained through variations in lightness and saturation, and judicious use of a single, well-chosen accent color to guide the eye and highlight interactivity.**
     *   **Gradients:** Apply captivating gradients (linear, radial, mesh) strategically and subtly to add depth, visual dynamism, and a premium, ethereal feel. Ensure smooth, artifact-free transitions that enhance visual flow without compromising clarity or overwhelming the design.
     *   **Shadows (Subtle, Natural & Defined):** Employ soft, diffused, and highly controlled shadows to accurately indicate elevation, establish visual hierarchy, and provide a tangible sense of depth (similar to Material Design or real-world lighting principles). **Crucially, shadows must *never* be harsh, detached, or overly prominent.**
     *   **Modernity:** Embrace contemporary design trends with thoughtful precision: generous and intelligent use of whitespace for clear separation, consistent and harmonious rounded corners, crisp lines, and impeccably smooth visual flow. Consider incorporating subtle Glassmorphism or Neumorphism effects only if contextually appropriate and demonstrably enhancing the design's premium feel and usability, avoiding over-application or visual clutter.
@@ -461,7 +464,8 @@ The selection of the 'Color Scheme and Theme' is paramount and must be dynamical
     *   **Clarity:** Ensure immediate and effortless understanding of information and available actions. Design information architecture to minimize cognitive load.
     *   **Hierarchy:** Master visual hierarchy with absolute precision, utilizing size, weight, color, contrast, and strategic placement to guide the user's eye effortlessly and predictably to key information and primary Call-to-Actions (CTAs).
     *   **Affordances:** Design interactive elements (buttons, inputs, toggles) to clearly and instinctively communicate their functionality and interactivity. They must *look* clickable, tappable, or usable without ambiguity.
-    *   **Consistency:** Maintain strict and unwavering consistency in spacing (e.g., rigid adherence to a 4px or 8px grid system), typography (2-3 carefully chosen, highly readable, and versatile fonts), color usage, and component styling throughout the entire design. This builds user familiarity and predictability.    *   **Precise Layout & Content Fit (Critical for Usability & Scalability):**
+    *   **Consistency:** Maintain strict and unwavering consistency in spacing (e.g., rigid adherence to a 4px or 8px grid system), typography (2-3 carefully chosen, highly readable, and versatile fonts), color usage, and component styling throughout the entire design. This builds user familiarity and predictability.
+    *   **Precise Layout & Content Fit (Critical for Usability & Scalability):**
         *   Ensure all content elements (text, icons) within containers (buttons, tags, cards, notification badges, headers) are **perfectly contained with generous and consistent internal padding** to guarantee a polished, pixel-perfect appearance.
         *   **Mobile Screen Layout Constraint:** Information and card displays must strictly adhere to a **maximum two-column layout**. Exceptions (which can exceed two columns) are limited to standalone icons, the main header, and the bottom navigation bar. This two-column (or single-column) rule also applies to all dashboard and summary board designs. 2 Column layout will be appriciated.
 
@@ -489,7 +493,7 @@ You must output **ONLY** a well-structured Markdown document adhering to the fol
 3.  **Components / Details (for UI brief content):** Within each section (for creation) or under the modification heading (for modification), list the specific UI components or changes using bullet points (`-` or `*`). Detail each point clearly:
     *   **Type:** Identify the component (e.g., Button, Search Bar, Image Placeholder, Icon Placeholder, Text Input, Card, Carousel, List Item, Tab Bar) or the type of change (e.g., Color Change, Font Style Change, Size Adjustment, Layout Adjustment).
     *   **Content:** Specify placeholder text (e.g., `"Search restaurants..."`, `"Username"`) or describe content type (e.g., "User Profile Image"). Keep text minimal and semantic.
-    *   **Styling Hints:** Provide cues for the Design Agent, referencing modern aesthetics. Use terms like: "Rounded corners", "Soft shadow", "Gradient background", "Clean layout", "Minimalist style", "Vibrant accent color", "Standard spacing".
+    *   **Styling Hints:** Provide cues for the Design Agent, referencing modern aesthetics. Use terms like: "Rounded corners", "Soft shadow", "Gradient background", "Clean layout", "Minimalist style", "Vibrant accent color", "Standard spacing". **Also include explicit notes on the chosen color palette type (e.g., "Monochromatic with deep blue base and subtle orange accent," or "Vibrant multi-chromatic palette").**
     *   **Layout & Placement:** Describe alignment ("Centered", "Left-aligned"), positioning ("Below header", "Fixed to bottom"), and arrangement ("Horizontal row", "Vertical stack", "Grid", "Carousel"). For modifications, describe the *desired* new layout/position relative to surrounding elements if requested.
     *   **Iconography:** Specify where icons are needed (e.g., "Search icon", "Notification icon").
     *   **Interactivity Hints (Optional):** Mention intended states if crucial (e.g., "Active tab highlighted", "Disabled button style").
@@ -554,11 +558,11 @@ The design for Foodiez will embrace a vibrant, high-contrast, and multi-chromati
 *   **Card Items**:
     *   **Card 1: Sushi Master Delights**
         *   **Title**: `Sushi Master`
-        *   **Subtitle**: *`20–30 min • Free delivery`*
+        *   **Subtitle**: *`20-30 min • Free delivery`*
         *   **Visual**: High-resolution, mouth-watering Sushi photo thumbnail.
     *   **Card 2: Pizza Mia's Perfect Slice**
         *   **Title**: `Pizza Mia`
-        *   **Subtitle**: *`15–25 min • $5 delivery`*
+        *   **Subtitle**: *`15-25 min • $5 delivery`*
         *   **Visual**: Delectable Pizza image thumbnail.
 *   **Layout**: Horizontally scrollable, positioned below the search bar.
 
@@ -582,7 +586,7 @@ The design for Foodiez will embrace a vibrant, high-contrast, and multi-chromati
         *   **Content**: Image of the restaurant or its signature dish.
     *   **Core Info (Center)**:
         *   **Name**: `Burger Zone` (Bold font).
-        *   **Subtitle**: *`Burgers • 20–25 min`* (Slightly lighter font).
+        *   **Subtitle**: *`Burgers • 20-25 min`* (Slightly lighter font).
         *   **Rating**: `⭐ 4.7` (Star icon followed by numerical score).
     *   **Favorite (Right)**:
         *   **Type**: Icon
@@ -591,26 +595,26 @@ The design for Foodiez will embrace a vibrant, high-contrast, and multi-chromati
         *   `$5 delivery` (Clear, concise text).
         *   **Promo Badge (If Applicable)**:
             *   **Content**: `10% Off Today!`
-            *   **Design**: Rectangular tag with rounded corners and a contrasting, vibrant color.
+            *   **Design**: Rectangular tag with rounded corners and a contrasting, vibrant color which is either soft grey or any mono-chromatic shade of the accent color(i.e, orange).
 *   **Layout**: Each card is a vertically stacked item, with the image on the left, core info in the center, favorite icon on the right, and strategic details on a bottom row within the card.
 *   **Number of Cards and Information:**
         *   **Card 1**: 
             *   **Name**: `Burger Zone`
-            *   **Subtitle**: `Burgers • 20–25 min`
+            *   **Subtitle**: `Burgers • 20-25 min`
             *   **Rating**: `⭐ 4.7`
             *   **Delivery**: `$5$ Delivery`
             *   **Promo Badge**: `10% Off Today!`
 
         *   **Card 2**: 
             *   **Name**: `Pasta Paradise`
-            *   **Subtitle**: `Italian • 30–45 min`
+            *   **Subtitle**: `Italian • 30-45 min`
             *   **Rating**: `⭐ 4.5`
             *   **Delivery**: `Free Delivery`
             *   **Promo Badge**: `3% Off Today!`
 
         *   **Card 3**: 
             *   **Name**: `Ocean's Delight`
-            *   **Subtitle**: `Seafood • 40–50 min`
+            *   **Subtitle**: `Seafood • 40-50 min`
             *   **Rating**: `⭐ 4.8`
             *   **Delivery**: `$3 Delivery`
 
@@ -659,7 +663,6 @@ The following image links are provided as visual inspiration and potential place
 - https://pixabay.com/get/gb98cca7636b6b60309fdf5b9508a38d3a61875f0b9bdcc96530cc904c048c7de97d613ea9b3f7ac8a701a20a2faeb75d_640.jpg
 - https://pixabay.com/get/g092456c485891cc656d57496bd6df2308e4232f71a8b828bde74c088eea47642590e488e038db3b76105427fff254a6321e194329f317fb63fb9f43ff46d1a67_640.jpg
 - https://pixabay.com/get/g943a3340be6ffa0d76802462c7061fd7c61e5063eb8ca5e220c84c864b93cee6da9a91ab4274db6f3de8373b00b55ba2c5eb99ce0b26c533408a3b5ca5c2c288_640.jpg
-
 ```
 """,
 )

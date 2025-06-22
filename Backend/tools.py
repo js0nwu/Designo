@@ -227,7 +227,7 @@ def get_material_icon_svg(icon_name: str, font_family: str, fill):
     if not icon_name:
         return None
 
-    if 'Material Icons' in font_family:
+    if ('Material Icons' in font_family or icon_name != 'star'):
         url = f"https://fonts.gstatic.com/s/i/materialiconsround/{icon_name}/v1/24px.svg"
 
     else:
