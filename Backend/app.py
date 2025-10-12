@@ -11,9 +11,6 @@ import adk_utils
 import agents
 import firebase_admin_init
 import api_handler # We will use acquire_project and release_project from here
-# import datetime # Not directly used in snippet
-# import pytz # Not directly used in snippet
-# import traceback # Not directly used in snippet, Flask handles top-level
 import re
 from tools import replace_svg_image_links_with_base64, replace_material_icons_in_svg, extract_svg_from_text
 
@@ -188,10 +185,19 @@ async def handle_generate():
             user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
         )
 
+        print("DEBUG:" ,intent_mode_raw)
+
         # adk_utils.run_adk_interaction now returns a dict for decision_agent if successful
-        if isinstance(intent_mode_raw, dict) and "mode" in intent_mode_raw and "prompt" in intent_mode_raw:
+        if isinstance(intent_mode_raw, str):
+            intent_mode_raw = intent_mode_raw.strip().replace("```json","").replace("```","").strip()
+            try:
+                intent_mode_raw = json.loads(intent_mode_raw)
+            except json.JSONDecodeError as e:
+                logging.error(f"UID {uid}: Failed to decode JSON from agent response: {e}")
+
+        if isinstance(intent_mode_raw, dict) and "mode" in intent_mode_raw and "modified_prompt" in intent_mode_raw:
             intent_mode = intent_mode_raw["mode"].strip().lower()
-            user_prompt_for_next_agent = intent_mode_raw["prompt"].strip()
+            user_prompt_for_next_agent = intent_mode_raw["modified_prompt"].strip()
             logging.info(f"UID {uid}: Determined Intent: '{intent_mode}' with refined prompt.")
         else: # Fallback if decision agent failed or returned unexpected format
             error_msg = f"Could not determine intent. Agent Response: {intent_mode_raw}"
@@ -305,7 +311,7 @@ async def handle_generate():
             logging.info(f"UID {uid}: --- Running Answer Agent (using key ...{api_key_for_this_entire_request[-4:]}) ---")
             
             # Use the refined prompt from decision agent
-            answer_prompt_text = f"{history_text}**User Query**\n{user_prompt_for_next_agent}\n\nPlease provide a helpful design-related answer."
+            answer_prompt_text = f"{history_text}**User Query**\n{user_prompt_for_next_agent}"
             answer_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=answer_prompt_text)])
             
             answer_text = await adk_utils.run_adk_interaction(

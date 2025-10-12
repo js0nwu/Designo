@@ -6,7 +6,7 @@ from google.adk.planners import BuiltInPlanner
 
 # --- Local Imports ---
 from tools import PixabayImageSearchTool
-from config import AGENT_MODEL, DECISION_MODEL # Import configured agent model
+from config import AGENT_MODEL, AGENT_MODEL_PRO, AGENT_MODEL_TOOL, DECISION_MODEL # Import configured agent model
 
 from google.genai import types
 
@@ -30,28 +30,28 @@ decision_agent = Agent(
 Based on the user's CURRENT request, the provided Figma context (if available), and especially the nature of previous turns, classify the intent into one of the following three categories:
 
 1.  **create**: The user wants to generate a *new* design element, component, layout, or screen from scratch based on a description. This is likely if the prompt is descriptive (e.g., "Create a login form", "Generate a hero section", "Design a dashboard") and the context indicates a valid empty target (like an empty frame) is selected or available, OR if the previous turn was an 'answer' or general chat and the user is now asking for a design.
-    *   For 'create' mode, the 'modified_prompt' should primarily be the user's original request, potentially refined for clarity or to include inferred platform/context if the history helps (e.g., "create a mobile login form" if previous conversation implied mobile).
+    *   For 'create' mode, the 'modified_prompt' must be a **comprehensive and actionable design brief**. It should combine the user's current request with all relevant, detailed specifications, features, and required elements gleaned from the **full previous conversation history**. **If the history contains a detailed plan, feature list, or component breakdown for the screen being requested (e.g., the 'Dashboard/Home Screen' details from a previous planning turn), those specifications MUST be incorporated into the 'modified_prompt'** to provide the Design Creator Agent with a complete and specific design context (e.g., platform, key features, required components).
 2.  **modify**: The user wants to *change*, *adjust*, or *refine* an *existing* design element or layout. This is highly likely if the prompt uses words like "change", "modify", "adjust", "update", "make this...", "fix the...", "make the button...", "change the color of...", and the context indicates a specific element or component is currently selected in Figma OR **the previous turn outputted an SVG design that the user is now refining.**
-    *   For 'modify' mode, the 'modified_prompt' should clearly state the specific modification request, focusing on the target element and the desired change. It should be concise and actionable.
+    *   For 'modify' mode, the 'modified_prompt' should clearly state the specific modification request. It should also include **any necessary project context from the conversation history** (e.g., the type of app, the overall design constraints) to ensure the modification is consistent with the overall design brief.
 3.  **answer**: The user is asking a general question, requesting information, seeking help, making a request unrelated to directly creating or modifying a design element within the current Figma selection context (e.g., "What are UI trends?", "How do I use this tool?", "Search for blue color palettes", "Tell me a joke", "Explain the golden ratio"). This is also the fallback if the intent is unclear or doesn't fit 'create'/'modify'.
     *   For 'answer' mode, the 'modified_prompt' should be the user's original question or request for information, as it will be passed directly to the `answer_agent`.
 
 **CRITICAL OUTPUT REQUIREMENT:**
 Respond with a JSON object (as a string) containing two keys: `mode` and `prompt`.
 - The `mode` key must have one of these three values: 'create', 'modify', or 'answer'.
-- The `prompt` key must contain the "modified prompt" as described above for each mode. This modified prompt should generally be the user's input, potentially rephrased or augmented with context from the history for clarity to the next agent.
+- The `modified_prompt` key must contain the "modified prompt" as described above for each mode. This modified prompt should generally be the user's input, potentially rephrased or augmented with context from the history for clarity to the next agent.
 
 **DO NOT include any other text, explanation, punctuation, or formatting outside the JSON string.**
 Your entire response must be a valid JSON string.
 
-**Example Output (create mode):**
-`{"mode": "create", "prompt": "design a mobile login form with social media buttons"}`
+**Example Output (create mode with context from history):**
+`{"mode": "create", "modified_prompt": "Design the 'My Credentials/Proofs' screen for the ZK-Pass browser extension. This screen should allow users to view and manage their stored verifiable credentials and zero-knowledge proofs. Consider the need for a compact browser extension format. Include functionalities for: 1) Displaying a list of stored credentials/proofs (with relevant details like issuer, date of issue, etc.). 2) Options to view the details of each credential/proof. 3) Options to delete or revoke credentials/proofs. 4) Potentially include search/filtering functionality for easier management."}`
 
 **Example Output (modify mode based on previous SVG output):**
-`{"mode": "modify", "prompt": "change the main button color to dark blue and make its text bold"}`
+`{"mode": "modify", "modified_prompt": "change the main button color to dark blue and make its text bold"}`
 
 **Example Output (answer mode):**
-`{"mode": "answer", "prompt": "What are the latest UI design trends for mobile apps?"}`
+`{"mode": "answer", "modified_prompt": "What are the latest UI design trends for mobile apps?"}`
 """,
     tools=[], # Decision agent usually doesn't need tools
 )
@@ -60,8 +60,8 @@ print(f"Agent '{decision_agent.name}' created using model '{decision_agent.model
 # Agent for Creating Designs
 create_agent = Agent(
     name="svg_creator_agent_v1",
-    model=AGENT_MODEL,
-    # planner=my_planner, # Disabled Thinking for now
+    model=AGENT_MODEL_PRO,
+    planner=my_planner, # Enabled Thinking for now
     description="Generates SVG code for UI designs based on textual descriptions.",
     instruction="""
 ---
@@ -228,7 +228,8 @@ print(f"Agent '{create_agent.name}' created using model '{create_agent.model}'."
 # Agent for Modifying Designs
 modify_agent = Agent(
     name="svg_modifier_agent_v1",
-    model=AGENT_MODEL, # Must have vision capability
+    model=AGENT_MODEL_PRO, # Must have vision capability
+    planner=my_planner, # Enabled Thinking for now
     # generate_content_config=google_genai_types.GenerateContentConfig(
     #     temperature=0.82 # Use sparingly
     # ),
@@ -540,7 +541,6 @@ The design for Foodiez will embrace a vibrant, high-contrast, and multi-chromati
     *   **Layout**: Left-aligned.
 *   **Notification Icon (Right)**:
     *   **Type**: Circular Icon Placeholder
-    *   **Size**: `32px` diameter.
     *   **Style**: Perfectly rounded circle. Consider a subtle inner glow or a playful `🔔` icon for new notifications.
     *   **Layout**: Right-aligned, opposite the location indicator.
 *   **Search Bar (Below)**:
@@ -582,7 +582,6 @@ The design for Foodiez will embrace a vibrant, high-contrast, and multi-chromati
 *   **Restaurant Card Item**:
     *   **Image (Left)**:
         *   **Type**: Circular Image Placeholder
-        *   **Size**: `64x64px` perfectly rounded.
         *   **Content**: Image of the restaurant or its signature dish.
     *   **Core Info (Center)**:
         *   **Name**: `Burger Zone` (Bold font).
@@ -672,7 +671,7 @@ print(f"Agent '{refine_agent.name}' created using model '{refine_agent.model}'."
 # Agent for handling answers
 answer_agent = Agent(
     name="answer_agent_v1",
-    model=AGENT_MODEL, # Capable of tool calling if needed
+    model=AGENT_MODEL_TOOL, # Capable of tool calling if needed
     description="Answers user questions by searching the internet for relevant and up-to-date information.",
     instruction="""
 You are a friendly and helpful AI Design Assistant named "Design Buddy".  Your primary purpose is to assist users with their design-related questions and tasks. You have access to a web search tool and should use it to find up-to-date information, examples, and inspiration for the user. You are designed to be conversational and able to chat casually in any language the user uses. You also have access to the previous conversation history to provide context-aware answers.
@@ -704,8 +703,6 @@ You are a friendly and helpful AI Design Assistant named "Design Buddy".  Your p
 **Example Interactions:**
 
 **User:** I need some inspiration for a website design for a yoga studio.
-
-**Design Buddy:**  Namaste!  I can definitely help with that. I'll search the web for some inspiring yoga studio website designs.  One moment...
 
 *(Web Search Conducted)*
 
