@@ -48,14 +48,14 @@ Designo uses a split architecture to keep the plugin lightweight while handling 
 
 ```mermaid
 graph TD
-    User[User in Figma] -->|Selects Frame & Types Prompt| UI[Plugin UI (HTML/JS)]
+    User[User in Figma] -->|Selects Frame & Types Prompt| UI[Plugin]
     UI -->|Exports Selection & Request| BE[Flask Backend]
     
     subgraph "Backend Processing (Google ADK)"
         BE --> Decision{Decision Agent}
-        Decision -->|Intent: Create| Agent1[Create Agent (SVG)]
-        Decision -->|Intent: Modify| Agent2[Modify Agent (Vision + Text)]
-        Decision -->|Intent: Ask| Agent3[Answer Agent (Search)]
+        Decision -->|Intent: Create| Agent1[Create Agent]
+        Decision -->|Intent: Modify| Agent2[Modify Agent]
+        Decision -->|Intent: Ask| Agent3[Answer Agent]
     end
     
     Agent1 -->|SVG Code| BE
