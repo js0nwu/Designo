@@ -44,7 +44,7 @@ Respond with a JSON object (as a string) containing two keys: `mode` and `prompt
 **DO NOT include any other text, explanation, punctuation, or formatting outside the JSON string.**
 Your entire response must be a valid JSON string.
 
-**Example Output (create mode with context from history):**
+**Example Output (create mode based (on user request or user request with context from history)):**
 `{"mode": "create", "modified_prompt": "Design the 'My Credentials/Proofs' screen for the ZK-Pass browser extension. This screen should allow users to view and manage their stored verifiable credentials and zero-knowledge proofs. Consider the need for a compact browser extension format. Include functionalities for: 1) Displaying a list of stored credentials/proofs (with relevant details like issuer, date of issue, etc.). 2) Options to view the details of each credential/proof. 3) Options to delete or revoke credentials/proofs. 4) Potentially include search/filtering functionality for easier management."}`
 
 **Example Output (modify mode based on previous SVG output):**
@@ -367,6 +367,7 @@ print(f"Agent '{modify_agent.name}' created using model '{modify_agent.model}'."
 refine_agent = Agent(
     name="prompt_refiner_v1",
     tools=[PixabayImageSearchTool().tool],
+    # planner=my_planner,
     model=AGENT_MODEL, # Needs to be capable for understanding design requests
     description="Refines an initial user prompt/design instructions into a structured design brief.",
     instruction="""

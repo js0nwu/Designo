@@ -82,7 +82,7 @@ def set_user_api_key():
     if not request.is_json:
         return jsonify({"success": False, "error": "Request must be JSON"}), 415
     uid, auth_error = get_user_uid_from_request(request)
-    if auth_error:
+    if auth_error or not uid:
         logging.warning(f"Authentication failed for /auth/set-api-key: {auth_error}")
         return jsonify({"success": False, "error": f"Authentication failed: {auth_error}"}), 401
     data = request.get_json()
@@ -104,7 +104,7 @@ async def handle_generate():
         return jsonify({"success": False, "error": "Request must be JSON"}), 415
 
     uid, auth_error = get_user_uid_from_request(request)
-    if auth_error:
+    if auth_error or not uid:
         logging.warning(f"Authentication/Authorization failed for /generate: {auth_error}")
         return jsonify({"success": False, "error": f"Authentication failed: {auth_error}"}), 401
     logging.info(f"/generate request from authenticated user UID: {uid}")
@@ -185,7 +185,7 @@ async def handle_generate():
             user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
         )
 
-        print("DEBUG:" ,intent_mode_raw)
+        print("DEBUG:" ,type(intent_mode_raw) ,intent_mode_raw)
 
         # adk_utils.run_adk_interaction now returns a dict for decision_agent if successful
         if isinstance(intent_mode_raw, str):
@@ -230,6 +230,7 @@ async def handle_generate():
                 agents.refine_agent, refine_content, adk_utils.session_service,
                 user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
             )
+            refined_prompt_md = str(refined_prompt_md)
             if not refined_prompt_md or refined_prompt_md.startswith("AGENT_ERROR:") or refined_prompt_md.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Refine Agent failed or returned error for create: {refined_prompt_md}")
             
@@ -273,6 +274,7 @@ async def handle_generate():
                 agents.refine_agent, refine_content, adk_utils.session_service,
                 user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
             )
+            refined_prompt_md = str(refined_prompt_md)
             if not refined_prompt_md or refined_prompt_md.startswith("AGENT_ERROR:") or refined_prompt_md.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Refine Agent failed or returned error for modify: {refined_prompt_md}")
 
@@ -296,6 +298,7 @@ async def handle_generate():
                 agents.modify_agent, modify_content, adk_utils.session_service,
                 user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
             )
+            modified_svg = str(modified_svg)
             if not modified_svg or modified_svg.startswith("AGENT_ERROR:") or modified_svg.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Modify Agent failed or returned error: {modified_svg}")
             
@@ -318,6 +321,7 @@ async def handle_generate():
                 agents.answer_agent, answer_content, adk_utils.session_service,
                 user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
             )
+            answer_text = str(answer_text)
             if not answer_text :
                  logging.info(f"UID {uid}: Answer agent returned empty response. Providing default.")
                  final_result = "I could not find specific information regarding your query at the moment."

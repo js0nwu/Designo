@@ -42,7 +42,7 @@ if not ENCRYPTION_KEY:
 # Configure ADK environment variables
 if os.getenv("GOOGLE_GENAI_USE_VERTEXAI") is None:
      os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "False"
-elif os.getenv("GOOGLE_GENAI_USE_VERTEXAI").lower() == "true":
+else:
     if not os.getenv("GOOGLE_CLOUD_PROJECT") or not os.getenv("GOOGLE_CLOUD_LOCATION"):
         raise ValueError("GOOGLE_GENAI_USE_VERTEXAI=True requires GOOGLE_CLOUD_PROJECT and GOOGLE_CLOUD_LOCATION in .env file")
 
@@ -67,7 +67,7 @@ APP_NAME = "figma_ai_assistant"
 AGENT_MODEL = "gemini-flash-latest"
 AGENT_MODEL_TOOL = "gemini-2.5-flash-preview-05-20"
 AGENT_MODEL_PRO = "gemini-2.5-pro"
-DECISION_MODEL = "gemini-2.0-flash"
+DECISION_MODEL = "gemini-flash-lite-latest"
 
 
 # Export configuration variables

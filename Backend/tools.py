@@ -2,7 +2,7 @@ import requests
 import base64
 import mimetypes
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse
+from bs4.element import Tag
 import os
 from typing import List, Dict, Union
 import xml.etree.ElementTree as ET
@@ -63,13 +63,17 @@ class PixabayImageSearchTool:
         results: Dict[str, List[str]] = {}
 
         for item in queries_info:
-            query = item.get("query")
+            query_raw = item.get("query")
             # Default to 1 image if 'num_images' is not specified or invalid
             num_images = int(item.get("num_images", 1)) 
 
-            if not query:
-                print(f"Warning: Skipping search item due to missing or empty 'query'. Item: {item}")
+            # Ensure query is a non-empty string
+            if not isinstance(query_raw, str) or not query_raw.strip():
+                print(f"Warning: Skipping search item due to missing, empty, or non-string 'query'. Item: {item}")
                 continue
+            
+            query: str = query_raw.strip()
+            
             if num_images <= 0:
                 print(f"Warning: Skipping search item for query '{query}' as 'num_images' is not positive.")
                 continue
@@ -182,6 +186,8 @@ def replace_svg_image_links_with_base64(svg_content):
     image_tags = soup.find_all('image')
 
     for tag in image_tags:
+        if not isinstance(tag, Tag):
+            continue
         href = tag.get('xlink:href') or tag.get('href')
         if href:
             data_uri = fetch_image_as_base64(href)
@@ -302,6 +308,8 @@ def replace_material_icons_in_svg(svg_string: str) -> str:
             try:
                 icon_root = ET.fromstring(icon_svg_text)
                 view_box = icon_root.get('viewBox')
+                if view_box is None:
+                    view_box = '0 0 24 24'  # Material Icons default
 
                 # Get all graphical children (e.g., paths, circles, groups, etc.)
                 graphical_elements = [
@@ -356,7 +364,7 @@ def replace_material_icons_in_svg(svg_string: str) -> str:
     return ET.tostring(root, encoding='unicode', method='xml')
 
 
-def extract_svg_from_text(text: str) -> str | None:
+def extract_svg_from_text(text) -> str | None:
     """
     Extracts the first complete SVG string found within a larger text block.
     Looks for the first '<svg' and the last '</svg>' to capture the full SVG.
