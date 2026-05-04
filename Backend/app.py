@@ -21,6 +21,61 @@ logging.basicConfig(level=logging.INFO)
 chat_history = {}
 MAX_CHAT_HISTORY = 10
 
+DEFAULT_MODEL_SETTINGS = {
+    "provider": "gemini",
+    "geminiModels": {
+        "decision": config.DECISION_MODEL,
+        "refine": config.AGENT_MODEL,
+        "create": config.AGENT_MODEL_PRO,
+        "modify": config.AGENT_MODEL_PRO,
+        "answer": config.AGENT_MODEL_TOOL,
+    },
+    "openAICompatible": {
+        "baseUrl": config.OPENAI_COMPAT_BASE_URL,
+        "model": config.OPENAI_COMPAT_MODEL,
+        "hasApiKey": bool(config.OPENAI_COMPAT_API_KEY),
+    },
+}
+
+def _clean_model_value(value, fallback="", max_length=160):
+    if not isinstance(value, str):
+        return fallback
+    value = value.strip()
+    if len(value) > max_length:
+        return fallback
+    return value or fallback
+
+def _resolve_model_settings(raw_settings):
+    if not isinstance(raw_settings, dict):
+        raw_settings = {}
+
+    provider = raw_settings.get("provider", DEFAULT_MODEL_SETTINGS["provider"])
+    if provider not in ("gemini", "openai-compatible"):
+        provider = "gemini"
+
+    raw_gemini_models = raw_settings.get("geminiModels") or {}
+    gemini_models = {
+        key: _clean_model_value(raw_gemini_models.get(key), default_value)
+        for key, default_value in DEFAULT_MODEL_SETTINGS["geminiModels"].items()
+    }
+
+    raw_openai = raw_settings.get("openAICompatible") or {}
+    openai_settings = {
+        "base_url": _clean_model_value(raw_openai.get("baseUrl"), config.OPENAI_COMPAT_BASE_URL, max_length=2048),
+        "api_key": _clean_model_value(raw_openai.get("apiKey"), config.OPENAI_COMPAT_API_KEY, max_length=4096),
+        "model": _clean_model_value(raw_openai.get("model"), config.OPENAI_COMPAT_MODEL),
+    }
+
+    return {
+        "provider": provider,
+        "geminiModels": gemini_models,
+        "openAICompatible": openai_settings,
+    }
+
+@app.route('/settings/defaults', methods=['GET'])
+def settings_defaults():
+    return jsonify(DEFAULT_MODEL_SETTINGS), 200
+
 # --- AI GENERATION ENDPOINT (Modified for pooled key handling) ---
 @app.route('/generate', methods=['POST'])
 async def handle_generate():
@@ -30,12 +85,32 @@ async def handle_generate():
     uid = request.headers.get("X-Designo-User", "local-designo-user")
     logging.info(f"/generate request from local user UID: {uid}")
 
+    data = request.get_json()
+    user_prompt_text = data.get('userPrompt')
+    context = data.get('context', {})
+    frame_data_base64 = data.get('frameDataBase64')
+    element_data_base64 = data.get('elementDataBase64')
+    i_mode = data.get('mode')
+    model_settings = _resolve_model_settings(data.get("modelSettings"))
+    provider = model_settings["provider"]
+
+    if not user_prompt_text:
+        return jsonify({"success": False, "error": "Missing 'userPrompt'"}), 400
+
     run_interaction_method = None
     api_key_for_this_entire_request = None
     project_in_use_for_this_request = None # Holds the dict from api_handler if a pooled key is used
     requests_today = None
 
-    if config.GOOGLE_API_KEY:
+    if provider == "openai-compatible":
+        openai_settings = model_settings["openAICompatible"]
+        if not openai_settings["base_url"]:
+            return jsonify({"success": False, "error": "OpenAI-compatible base URL is missing."}), 400
+        if not openai_settings["model"]:
+            return jsonify({"success": False, "error": "OpenAI-compatible model name is missing."}), 400
+        run_interaction_method = "openai_compatible"
+        logging.info(f"Using OpenAI-compatible endpoint for UID {uid}.")
+    elif config.GOOGLE_API_KEY:
         logging.info(f"Using backend GOOGLE_API_KEY for UID {uid}.")
         run_interaction_method = 'server_key'
         api_key_for_this_entire_request = config.GOOGLE_API_KEY
@@ -49,15 +124,6 @@ async def handle_generate():
         }), 500
 
     user_history = chat_history.get(uid, [])
-    data = request.get_json()
-    user_prompt_text = data.get('userPrompt')
-    context = data.get('context', {})
-    frame_data_base64 = data.get('frameDataBase64')
-    element_data_base64 = data.get('elementDataBase64')
-    i_mode = data.get('mode')
-
-    if not user_prompt_text:
-        return jsonify({"success": False, "error": "Missing 'userPrompt'"}), 400
 
     history_text = ""
     if user_history:
@@ -95,16 +161,36 @@ async def handle_generate():
                     logging.error(f"UID {uid}: Failed to acquire a pooled project (unexpected error): {acquire_err}", exc_info=True)
                     return jsonify({"success": False, "error": f"An internal server error occurred while acquiring resources: {acquire_err}"}), 500
 
-        if not api_key_for_this_entire_request: # Should only happen if pooled_key path failed to set it
+        if run_interaction_method != "openai_compatible" and not api_key_for_this_entire_request:
              logging.error(f"UID {uid}: Logical error - API key for the request was not set.")
              return jsonify({"success": False, "error": "Internal server error: API key not available for processing."}), 500
 
+        async def run_agent(agent_to_run, content, role):
+            if run_interaction_method == "openai_compatible":
+                return await adk_utils.run_openai_compatible_interaction(
+                    agent_to_run,
+                    content,
+                    model_settings["openAICompatible"],
+                    user_id=uid,
+                )
+            return await adk_utils.run_adk_interaction(
+                agent_to_run,
+                content,
+                adk_utils.session_service,
+                user_id=uid,
+                api_key=api_key_for_this_entire_request,
+                model_override=model_settings["geminiModels"].get(role),
+            )
+
+        key_label = (
+            f"OpenAI-compatible model {model_settings['openAICompatible']['model']}"
+            if run_interaction_method == "openai_compatible"
+            else f"Gemini key ...{api_key_for_this_entire_request[-4:]}"
+        )
+
         # --- 1. Determine Intent (using the single chosen API key) ---
         agent_used_name_log = agents.decision_agent.name
-        intent_mode_raw = await adk_utils.run_adk_interaction(
-            agents.decision_agent, decision_content, adk_utils.session_service,
-            user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
-        )
+        intent_mode_raw = await run_agent(agents.decision_agent, decision_content, "decision")
 
         print("DEBUG:" ,type(intent_mode_raw) ,intent_mode_raw)
 
@@ -142,15 +228,12 @@ async def handle_generate():
         if intent_mode == 'create':
             final_type = "svg"
             agent_used_name_log = f"{agents.refine_agent.name} -> {agents.create_agent.name}"
-            logging.info(f"UID {uid}: --- Initiating Create Flow (using key ...{api_key_for_this_entire_request[-4:]}) ---")
+            logging.info(f"UID {uid}: --- Initiating Create Flow (using {key_label}) ---")
             
             # Use the refined prompt from decision agent
             refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_for_next_agent)])
             
-            refined_prompt_md = await adk_utils.run_adk_interaction(
-                agents.refine_agent, refine_content, adk_utils.session_service,
-                user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
-            )
+            refined_prompt_md = await run_agent(agents.refine_agent, refine_content, "refine")
             refined_prompt_md = str(refined_prompt_md)
             if not refined_prompt_md or refined_prompt_md.startswith("AGENT_ERROR:") or refined_prompt_md.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Refine Agent failed or returned error for create: {refined_prompt_md}")
@@ -168,10 +251,7 @@ async def handle_generate():
                 print("failed to write refined prompt")
             # ============================================================
             create_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=refined_prompt_clean)])
-            response = await adk_utils.run_adk_interaction(
-                agents.create_agent, create_content, adk_utils.session_service,
-                user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
-            )
+            response = await run_agent(agents.create_agent, create_content, "create")
             initial_svg = extract_svg_from_text(response)
             if not initial_svg or initial_svg.startswith("AGENT_ERROR:") or initial_svg.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Create Agent failed or returned error: {initial_svg}")
@@ -185,16 +265,13 @@ async def handle_generate():
         elif intent_mode == 'modify':
             final_type = "svg"
             agent_used_name_log = f"{agents.refine_agent.name} -> {agents.modify_agent.name}"
-            logging.info(f"UID {uid}: --- Initiating Modify Flow (using key ...{api_key_for_this_entire_request[-4:]}) ---")
+            logging.info(f"UID {uid}: --- Initiating Modify Flow (using {key_label}) ---")
             if not frame_data_base64 or not element_data_base64 or not context.get('elementInfo'):
                  raise ValueError("Missing 'frameDataBase64', 'elementDataBase64', or 'elementInfo' for modify mode")
 
             # Use the refined prompt from decision agent
             refine_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=user_prompt_for_next_agent)])
-            refined_prompt_md = await adk_utils.run_adk_interaction(
-                agents.refine_agent, refine_content, adk_utils.session_service,
-                user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
-            )
+            refined_prompt_md = await run_agent(agents.refine_agent, refine_content, "refine")
             refined_prompt_md = str(refined_prompt_md)
             if not refined_prompt_md or refined_prompt_md.startswith("AGENT_ERROR:") or refined_prompt_md.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Refine Agent failed or returned error for modify: {refined_prompt_md}")
@@ -215,10 +292,7 @@ async def handle_generate():
                 raise ValueError(f"Invalid image data received for modify mode: {e}")
             
             modify_content = google_genai_types.Content(role='user', parts=message_parts)
-            modified_svg = await adk_utils.run_adk_interaction(
-                agents.modify_agent, modify_content, adk_utils.session_service,
-                user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
-            )
+            modified_svg = await run_agent(agents.modify_agent, modify_content, "modify")
             modified_svg = str(modified_svg)
             if not modified_svg or modified_svg.startswith("AGENT_ERROR:") or modified_svg.startswith("ADK_RUNTIME_ERROR:"):
                 raise ValueError(f"Modify Agent failed or returned error: {modified_svg}")
@@ -232,16 +306,13 @@ async def handle_generate():
         elif intent_mode == 'answer':
             final_type = "answer"
             agent_used_name_log = agents.answer_agent.name
-            logging.info(f"UID {uid}: --- Running Answer Agent (using key ...{api_key_for_this_entire_request[-4:]}) ---")
+            logging.info(f"UID {uid}: --- Running Answer Agent (using {key_label}) ---")
             
             # Use the refined prompt from decision agent
             answer_prompt_text = f"{history_text}**User Query**\n{user_prompt_for_next_agent}"
             answer_content = google_genai_types.Content(role='user', parts=[google_genai_types.Part(text=answer_prompt_text)])
             
-            answer_text = await adk_utils.run_adk_interaction(
-                agents.answer_agent, answer_content, adk_utils.session_service,
-                user_id=uid, api_key=api_key_for_this_entire_request # Use the held key
-            )
+            answer_text = await run_agent(agents.answer_agent, answer_content, "answer")
             answer_text = str(answer_text)
             if not answer_text :
                  logging.info(f"UID {uid}: Answer agent returned empty response. Providing default.")
@@ -283,7 +354,12 @@ async def handle_generate():
         "success": True,
         "mode": final_type,
         "requests_today": requests_today,
-        "using_server_key": run_interaction_method == 'server_key'
+        "provider": provider,
+        "using_server_key": run_interaction_method == 'server_key',
+        "model_settings": {
+            "geminiModels": model_settings["geminiModels"],
+            "openAICompatibleModel": model_settings["openAICompatible"]["model"],
+        }
     }
     # NEW: Add information about the pooled key's remaining requests
     if run_interaction_method == 'pooled_key' and project_in_use_for_this_request:
@@ -316,6 +392,8 @@ async def handle_generate():
     
     if run_interaction_method == 'server_key':
         key_info = "(Server GOOGLE_API_KEY)"
+    elif run_interaction_method == "openai_compatible":
+        key_info = f"(OpenAI-compatible model: {model_settings['openAICompatible']['model']})"
     else:
         key_info = f"(Pooled project: {project_in_use_for_this_request['id'] if project_in_use_for_this_request else 'N/A'})"
     logging.info(f"UID {uid}: Request completed successfully (type: {final_type}) {key_info}.")

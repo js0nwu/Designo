@@ -214,7 +214,7 @@ figma.ui.onmessage = async (msg) => {
   // --- Request from UI to START AI Generation (Initial trigger after auth/prompt) ---
   if (msg.type === "request-ai-generation") {
     isProcessing = true; // Set processing flag
-    const { mode, userPrompt, elementInfo } = msg; // elementInfo is passed directly from UI
+    const { mode, userPrompt, elementInfo, modelSettings } = msg; // elementInfo is passed directly from UI
     let figmaFrameId = null; // Renamed to avoid confusion with `frameId` from msg.context
 
     try {
@@ -265,6 +265,7 @@ figma.ui.onmessage = async (msg) => {
         mode: mode,
         userPrompt: userPrompt,
         context: context,
+        modelSettings: modelSettings || null,
       };
 
       let originalElementId = null; // To store for replacement

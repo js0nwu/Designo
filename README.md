@@ -92,6 +92,8 @@ Before running Designo, ensure you have the following installed:
 
 **Local mode note:** This fork does not require Firebase or user login. The plugin opens directly in local mode and sends prompts to the local Flask backend. The backend still needs a Gemini API key configured with `GOOGLE_API_KEY` or pooled keys such as `GOOGLE_API_KEY_0`.
 
+**Model settings note:** The plugin now has a Models pane for testing provider and model overrides. Defaults are loaded from the backend `.env` values such as `AGENT_MODEL`, `AGENT_MODEL_PRO`, `AGENT_MODEL_TOOL`, `DECISION_MODEL`, and `OPENAI_COMPAT_*`. Gemini remains the full ADK-backed path; OpenAI-compatible endpoints use a `/chat/completions` style API and do not run ADK tools or planners.
+
 ---
 
 ## 🚀 Installation & Setup
