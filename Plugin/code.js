@@ -1,24 +1,17 @@
 figma.showUI(__html__, {
   width: 500,
-  height: 600, // Adjusted height for auth section
+  height: 600,
   title: "AI Design Assistant",
 });
 
 // --- Backend URLs (Moved from ui.html) ---
 const BACKEND_URL = "http://localhost:5001/generate";
-const TOKEN_EXCHANGE_URL = "http://localhost:5001/auth/exchange-id-token-for-custom-token"; // Used by UI, but here for context
-const SET_API_KEY_URL = "http://localhost:5001/auth/set-api-key";
 
 // State variables
 let lastNotifiedFrameId = null;
 let lastNotifiedMode = null;
 let originalSelectedNodeId = null; // Still needed for modify replacement
 let isProcessing = false; // Use this flag to prevent selection changes during AI process
-
-// New state variables for authentication, managed by messages from UI
-let currentUserIdToken = null;
-let isUserAuthenticated = false;
-let hasUserProvidedApiKey = false;
 
 // findTopLevelFrame function (remains the same)
 function findTopLevelFrame(node) {
@@ -100,17 +93,6 @@ figma.on("selectionchange", async () => {
   if (isProcessing) {
     return;
   }
-  // New: Check if user is authenticated before allowing selection processing
-  if (!isUserAuthenticated) {
-    figma.ui.postMessage({
-      type: "selection-invalid",
-      reason: "Please sign in to use the assistant.",
-    });
-    lastNotifiedFrameId = null;
-    lastNotifiedMode = "answer";
-    return;
-  }
-
   const selection = figma.currentPage.selection;
   let mode = "answer";
   let frameId = null;
@@ -229,100 +211,11 @@ figma.on("selectionchange", async () => {
 figma.ui.onmessage = async (msg) => {
   console.log("Message received from ui.html:", msg.type);
 
-  // New: Handle authentication state updates from UI
-  if (msg.type === "auth-state-changed") {
-    currentUserIdToken = msg.idToken;
-    isUserAuthenticated = msg.isAuthenticated;
-    hasUserProvidedApiKey = msg.hasApiKey;
-    console.log(
-      `Code.js received auth-state-changed. Authenticated: ${isUserAuthenticated}, Has API Key: ${hasUserProvidedApiKey}`
-    );
-    // Re-trigger selection change to update UI based on auth status
-    // figma.trigger('selectionchange');
-    return; // Important to return here to avoid processing as a different message type
-  }
-  // New: Handle request to set API key from UI
-  else if (msg.type === "request-set-api-key") {
-    const { apiKey } = msg;
-
-    if (!currentUserIdToken) {
-      figma.ui.postMessage({
-        type: "backend-api-key-status",
-        success: false,
-        error: "Authentication token missing. Please sign in to save your key.",
-      });
-      return;
-    }
-
-    figma.ui.postMessage({
-      type: "status-update",
-      text: "Saving API key...",
-      isLoading: true,
-    });
-
-    try {
-      const response = await fetch(SET_API_KEY_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${currentUserIdToken}`,
-        },
-        body: JSON.stringify({ apiKey: apiKey }),
-      });
-
-      const result = await response.json();
-      if (response.ok && result.success) {
-        hasUserProvidedApiKey = true; // Update state in code.js
-        figma.ui.postMessage({
-          type: "backend-api-key-status",
-          success: true,
-          message: result.message,
-        });
-      } else {
-        let errorMsg = result.error || "Failed to save key.";
-        if (response.status === 401) {
-          errorMsg = `Authentication failed: ${errorMsg}. Please sign in again.`;
-          figma.ui.postMessage({
-            type: "backend-response-error",
-            status: 401,
-            error: errorMsg,
-          }); // Signal UI to sign out
-        } else {
-          figma.ui.postMessage({
-            type: "backend-api-key-status",
-            success: false,
-            error: errorMsg,
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Error sending API key to backend from code.js:", error);
-      figma.ui.postMessage({
-        type: "backend-api-key-status",
-        success: false,
-        error: `Network/Connection Error: ${error.message}`,
-      });
-    } finally {
-      // UI will handle setLoading(false) upon receiving backend-api-key-status
-    }
-  }
   // --- Request from UI to START AI Generation (Initial trigger after auth/prompt) ---
-  else if (msg.type === "request-ai-generation") {
+  if (msg.type === "request-ai-generation") {
     isProcessing = true; // Set processing flag
     const { mode, userPrompt, elementInfo } = msg; // elementInfo is passed directly from UI
     let figmaFrameId = null; // Renamed to avoid confusion with `frameId` from msg.context
-
-    // Crucial: Check for authentication token before proceeding
-    if (!currentUserIdToken) {
-      figma.ui.postMessage({
-        type: "backend-response-error",
-        status: 401,
-        error:
-          "Authentication token missing. Please sign in to use the assistant.",
-      });
-      isProcessing = false;
-      return;
-    }
 
     try {
       figma.ui.postMessage({
@@ -461,7 +354,6 @@ figma.ui.onmessage = async (msg) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${currentUserIdToken}`, // Use the stored ID token
         },
         body: JSON.stringify(backendPayload),
       });
@@ -471,30 +363,11 @@ figma.ui.onmessage = async (msg) => {
       // Handle backend response status and result
       if (!response.ok || !result.success) {
         let errorMsg = result.error || "Backend returned an unspecified error.";
-        // Specific handling for authentication errors from backend
-        if (response.status === 401) {
-          errorMsg = `Authentication failed: ${errorMsg}. Please sign in again.`;
-          // Signal UI to clear session and prompt re-authentication
-          figma.ui.postMessage({
-            type: "backend-response-error",
-            status: 401,
-            error: errorMsg,
-          });
-        } else {
-          // For other backend errors (e.g., trial expired)
-          figma.ui.postMessage({
-            type: "backend-response-error",
-            status: response.status,
-            error: errorMsg,
-          });
-          // If it was a trial expired error, ensure the banner is updated by UI
-          if (result.mode === "trial_expired") {
-            hasUserProvidedApiKey = false; // Reflect this state in code.js, UI will also update.
-            // Force UI banner update (via auth-state-changed) to show "unlock unlimited"
-            // This message should primarily come from onAuthStateChanged in UI after backend `hasApiKey` status update
-            // figma.ui.postMessage({ type: 'auth-state-changed', idToken: currentUserIdToken, isAuthenticated: isUserAuthenticated, hasApiKey: hasUserProvidedApiKey, email: null });
-          }
-        }
+        figma.ui.postMessage({
+          type: "backend-response-error",
+          status: response.status,
+          error: errorMsg,
+        });
         isProcessing = false;
         return;
       }
@@ -717,9 +590,9 @@ figma.ui.onmessage = async (msg) => {
   }
 };
 
-// Removed setTimeout, as `auth-state-changed` message from UI will trigger initial selection update after auth.
+// Initial selection updates will happen as the user changes selection in Figma.
 // setTimeout(() => { figma.trigger('selectionchange'); }, 50);
 
 console.log(
-  "Figma AI Design Assistant plugin code (Backend + Auth Version) loaded."
+  "Figma AI Design Assistant plugin code (Backend, local mode) loaded."
 );

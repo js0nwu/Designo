@@ -7,7 +7,6 @@ import io
 import os # Import os to modify environment variable
 import json # Import json for parsing
 import logging # Use logging instead of print for consistency
-from cryptography.fernet import Fernet # Import Fernet
 
 # --- ADK Imports ---
 from google.adk.sessions import InMemorySessionService
@@ -16,50 +15,7 @@ from google.adk.agents import Agent # Import Agent for type hinting
 from google.genai import types as google_genai_types # For Content/Part
 
 # --- Local Imports ---
-from config import APP_NAME, ENCRYPTION_KEY # Import configured app name and encryption key
-
-# --- Initialize Fernet ---
-# Ensure the encryption key is valid before initializing Fernet
-try:
-    if ENCRYPTION_KEY:
-        fernet = Fernet(ENCRYPTION_KEY)
-        logging.info("Fernet encryption initialized.")
-    else:
-        fernet = None
-        logging.warning("ENCRYPTION_KEY is not set. Encryption/Decryption functions will not work.")
-except Exception as e:
-     fernet = None
-     logging.error(f"Failed to initialize Fernet with provided key: {e}. Encryption/Decryption will not work.")
-
-
-# --- Encryption/Decryption Helpers ---
-def encrypt_api_key(api_key: str) -> str | None:
-    """Encrypts a string using Fernet."""
-    if not fernet:
-        logging.error("Encryption key not available or invalid. Cannot encrypt.")
-        return None
-    try:
-        # API key should be bytes for Fernet
-        encrypted_bytes = fernet.encrypt(api_key.encode())
-        return encrypted_bytes.decode() # Return as string for storage
-    except Exception as e:
-        logging.error(f"Error during encryption: {e}")
-        return None
-
-def decrypt_api_key(encrypted_api_key: str) -> str | None:
-    """Decrypts a string using Fernet."""
-    if not fernet:
-        logging.error("Encryption key not available or invalid. Cannot decrypt.")
-        return None
-    if not encrypted_api_key:
-        return None # Cannot decrypt empty string
-    try:
-        # Encrypted key is a string, encode back to bytes
-        decrypted_bytes = fernet.decrypt(encrypted_api_key.encode())
-        return decrypted_bytes.decode() # Return as original string
-    except Exception as e:
-        logging.error(f"Error during decryption: {e}. The key might be invalid or the decryption key is wrong.")
-        return None
+from config import APP_NAME
 
 
 # --- ADK Session Service (Single instance for the application) ---
@@ -212,6 +168,4 @@ __all__ = [
     "session_service",
     "is_valid_svg",
     "run_adk_interaction",
-    "encrypt_api_key",
-    "decrypt_api_key",
 ]

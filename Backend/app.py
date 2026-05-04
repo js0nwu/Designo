@@ -9,9 +9,7 @@ from google.genai import types as google_genai_types
 import config
 import adk_utils
 import agents
-import firebase_admin_init
 import api_handler # We will use acquire_project and release_project from here
-import re
 from tools import replace_svg_image_links_with_base64, replace_material_icons_in_svg, extract_svg_from_text
 
 # --- Flask App Setup ---
@@ -23,109 +21,32 @@ logging.basicConfig(level=logging.INFO)
 chat_history = {}
 MAX_CHAT_HISTORY = 10
 
-# --- Utility to extract and verify UID from request (for AI requests) ---
-def get_user_uid_from_request(request):
-    """Extracts and verifies the Firebase ID token from the Authorization header."""
-    auth_header = request.headers.get('Authorization')
-    if not auth_header:
-        return None, "Authorization header missing"
-    try:
-        scheme, id_token = auth_header.split()
-        if scheme.lower() != 'bearer':
-            return None, "Authorization scheme must be Bearer"
-    except ValueError:
-        return None, "Invalid Authorization header format"
-    uid = firebase_admin_init.verify_firebase_id_token(id_token)
-    if not uid:
-        return None, "Authentication failed: Invalid or expired token. Please sign in again."
-    return uid, None
-
-# --- AUTHENTICATION & KEY MANAGEMENT ENDPOINTS (Unchanged) ---
-@app.route('/auth/exchange-id-token-for-custom-token', methods=['POST'])
-def exchange_id_token_for_custom_token():
-    if not request.is_json:
-        return jsonify({"success": False, "error": "Request must be JSON"}), 415
-    data = request.get_json()
-    client_id_token = data.get('idToken')
-    if not client_id_token:
-        return jsonify({"success": False, "error": "Missing 'idToken' in request body"}), 400
-    try:
-        decoded_token = firebase_admin_init.firebase_auth.verify_id_token(client_id_token, check_revoked=True)
-        uid = decoded_token['uid']
-        email = decoded_token.get('email')
-        logging.info(f"Client ID Token verified. User UID: {uid}")
-        firebase_admin_init.create_user_doc_if_not_exists(uid, email=email)
-        custom_token_bytes = firebase_admin_init.firebase_auth.create_custom_token(uid)
-        logging.info(f"Custom token minted for UID: {uid}")
-        has_api_key = firebase_admin_init.has_api_key_stored(uid)
-        logging.info(f"User {uid} has API key stored: {has_api_key}")
-        return jsonify({
-            "success": True,
-            "customToken": custom_token_bytes.decode('utf-8'),
-            "hasApiKey": has_api_key
-            }), 200
-    except firebase_admin_init.auth.ExpiredIdTokenError:
-        logging.warning("Client ID Token is expired.")
-        return jsonify({"success": False, "error": "Authentication failed: Token expired. Please sign in again."}), 401
-    except firebase_admin_init.auth.InvalidIdTokenError:
-        logging.warning("Client ID Token is invalid.")
-        return jsonify({"success": False, "error": "Authentication failed: Invalid token. Please sign in again."}), 401
-    except firebase_admin_init.auth.UserDisabledError:
-         logging.warning(f"User account is disabled.")
-         return jsonify({"success": False, "error": "Your account is disabled. Please contact support."}), 401
-    except Exception as e:
-        logging.error(f"Error exchanging client ID token for custom token: {e}", exc_info=True)
-        return jsonify({"success": False, "error": "An internal error occurred during authentication."}), 500
-
-@app.route('/auth/set-api-key', methods=['POST'])
-def set_user_api_key():
-    if not request.is_json:
-        return jsonify({"success": False, "error": "Request must be JSON"}), 415
-    uid, auth_error = get_user_uid_from_request(request)
-    if auth_error or not uid:
-        logging.warning(f"Authentication failed for /auth/set-api-key: {auth_error}")
-        return jsonify({"success": False, "error": f"Authentication failed: {auth_error}"}), 401
-    data = request.get_json()
-    api_key_from_user = data.get('apiKey')
-    if not api_key_from_user or not isinstance(api_key_from_user, str):
-        return jsonify({"success": False, "error": "Missing or invalid 'apiKey' in request body"}), 400
-    if not re.match(r'^AIza[0-9A-Za-z_-]{35}$', api_key_from_user):
-         logging.warning(f"User {uid} provided an API key that doesn't match typical Gemini format.")
-    success = firebase_admin_init.store_encrypted_api_key(uid, api_key_from_user)
-    if success:
-        return jsonify({"success": True, "message": "API key saved successfully. You now have unlimited access!"}), 200
-    else:
-        return jsonify({"success": False, "error": "Failed to save API key. Please try again."}), 500
-
 # --- AI GENERATION ENDPOINT (Modified for pooled key handling) ---
 @app.route('/generate', methods=['POST'])
 async def handle_generate():
     if not request.is_json:
         return jsonify({"success": False, "error": "Request must be JSON"}), 415
 
-    uid, auth_error = get_user_uid_from_request(request)
-    if auth_error or not uid:
-        logging.warning(f"Authentication/Authorization failed for /generate: {auth_error}")
-        return jsonify({"success": False, "error": f"Authentication failed: {auth_error}"}), 401
-    logging.info(f"/generate request from authenticated user UID: {uid}")
-
-    can_proceed_trial, trial_message, decrypted_user_api_key, requests_today = firebase_admin_init.process_daily_trial(uid)
+    uid = request.headers.get("X-Designo-User", "local-designo-user")
+    logging.info(f"/generate request from local user UID: {uid}")
 
     run_interaction_method = None
     api_key_for_this_entire_request = None
     project_in_use_for_this_request = None # Holds the dict from api_handler if a pooled key is used
+    requests_today = None
 
-    if decrypted_user_api_key:
-        logging.info(f"User {uid} has a stored (BYOK) API key. Using it for all steps.")
-        run_interaction_method = 'user_key'
-        api_key_for_this_entire_request = decrypted_user_api_key
-    elif can_proceed_trial:
-        logging.info(f"User {uid} is eligible for a trial. Acquiring a pooled API key for all steps.")
+    if config.GOOGLE_API_KEY:
+        logging.info(f"Using backend GOOGLE_API_KEY for UID {uid}.")
+        run_interaction_method = 'server_key'
+        api_key_for_this_entire_request = config.GOOGLE_API_KEY
+    elif api_handler.PROJECT_POOL:
+        logging.info(f"No backend GOOGLE_API_KEY set. Acquiring a pooled API key for UID {uid}.")
         run_interaction_method = 'pooled_key'
-        # Key will be acquired later, inside the try/except/finally block for pooled_key path
     else:
-        logging.info(f"User {uid} has no API key and trial is not available. Message: {trial_message}")
-        return jsonify({"success": False, "error": trial_message, "mode": "trial_expired"}), 200
+        return jsonify({
+            "success": False,
+            "error": "No Gemini API key configured. Set GOOGLE_API_KEY or at least one GOOGLE_API_KEY_0 style pooled key."
+        }), 500
 
     user_history = chat_history.get(uid, [])
     data = request.get_json()
@@ -361,8 +282,8 @@ async def handle_generate():
     response_payload = {
         "success": True,
         "mode": final_type,
-        "requests_today": requests_today, # This is the user's trial quota from process_daily_trial
-        "using_own_key": run_interaction_method == 'user_key'
+        "requests_today": requests_today,
+        "using_server_key": run_interaction_method == 'server_key'
     }
     # NEW: Add information about the pooled key's remaining requests
     if run_interaction_method == 'pooled_key' and project_in_use_for_this_request:
@@ -393,25 +314,17 @@ async def handle_generate():
     elif final_type == "answer":
         response_payload["answer"] = final_result
     
-    key_info = f"(User's key)" if run_interaction_method == 'user_key' else f"(Pooled project: {project_in_use_for_this_request['id'] if project_in_use_for_this_request else 'N/A'})"
-    logging.info(f"UID {uid}: Request completed successfully (type: {final_type}) {key_info}. Trial count: {requests_today}.")
+    if run_interaction_method == 'server_key':
+        key_info = "(Server GOOGLE_API_KEY)"
+    else:
+        key_info = f"(Pooled project: {project_in_use_for_this_request['id'] if project_in_use_for_this_request else 'N/A'})"
+    logging.info(f"UID {uid}: Request completed successfully (type: {final_type}) {key_info}.")
     return jsonify(response_payload), 200
-
-
-# --- Provide Firebase Client Config to UI (Unchanged) ---
-@app.route('/firebase-config', methods=['GET'])
-def firebase_config():
-     if not config.FIREBASE_CLIENT_CONFIG:
-         logging.error("Firebase client config is not loaded.")
-         return jsonify({"error": "Firebase client configuration is not available on the backend."}), 500
-     return jsonify(config.FIREBASE_CLIENT_CONFIG), 200
-
 
 # --- Run the App (Unchanged) ---
 if __name__ == '__main__':
     logging.info(f"Running Flask app with AGENT_MODEL='{config.AGENT_MODEL}'")
-    logging.info("Ensure Firebase Admin SDK is initialized (via import of firebase_admin_init).")
-    logging.info("Ensure Firebase Client Config JSON and ENCRYPTION_KEY are set in .env and parsed.")
+    logging.info("Local mode enabled; configure GOOGLE_API_KEY or GOOGLE_API_KEY_0 style pooled keys.")
 
     from hypercorn.config import Config as HypercornConfig
     import hypercorn.asyncio
