@@ -90,6 +90,8 @@ Before running Designo, ensure you have the following installed:
 *   [Figma Desktop App](https://www.figma.com/downloads/)
 *   **Google API Key:** Get one from [Google AI Studio](https://aistudio.google.com/app/apikey).
 
+**Local mode note:** This fork does not require Firebase or user login. The plugin opens directly in local mode and sends prompts to the local Flask backend. The backend still needs a Gemini API key configured with `GOOGLE_API_KEY` or pooled keys such as `GOOGLE_API_KEY_0`.
+
 ---
 
 ## 🚀 Installation & Setup
